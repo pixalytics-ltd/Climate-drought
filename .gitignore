@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Pcyharm
+.idea
+
+# Linked folders
+climate_drought
