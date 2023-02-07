@@ -190,11 +190,19 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
 
         # Calculate SPI
 
-        # Convert xarray to panda Series
-        srs = mean.to_pandas()
+        # Convert xarray to dataframe Series
+        df = mean.to_dataframe()
+        print("DF: ")
+
+        # Convert date/time to string and then set this as the index
+        df['day'] = df.index.strftime('%Y-%m-%d')
+        df = df.reset_index(drop=True)
+        df = df.set_index('day')
+        print(df.info())#head())
 
         # Save as json file
-        json_str = srs.to_json()
+        json_str = df.to_json()
+        print("JSON: {}".format(json_str))
         with open(output_file_path, "w") as outfile:
             json.dump(json_str, outfile, indent=4)
 
