@@ -1,5 +1,7 @@
 import logging
 import os
+import sys
+from os.path import expanduser
 import subprocess
 from pathlib import Path
 from typing import List
@@ -19,9 +21,23 @@ class Era5ProcessingBase:
     data sources
     """
     # Code to downloading data from the Copernicus Climate Data Store.
-    # Provided by the 'pixutils' module; if properly installed this script should be located in the
-    #   'bin' directory of the Conda environment
-    ERA_DOWNLOAD_PY = "era_download.py"
+    # If the 'pixutils' module is installed this script should be located in the 'bin' directory of the Conda environment else setup link to pixutils
+
+    era_download = "era_download.py"
+    home = expanduser("~")
+    python_env = os.path.join(home, "anaconda3/envs/climate_env/bin")
+    ERA_DOWNLOAD_PY = os.path.join(python_env, era_download)
+    if not os.path.exists(ERA_DOWNLOAD_PY):
+        ERA_DOWNLOAD_PY = os.path.join("pixutils", era_download)
+
+    if not os.path.exists(ERA_DOWNLOAD_PY):
+        print("could not find {}, exiting".format(era_download))
+        sys.exit(1)
+
+    # Need to call from python env is not in bin folder
+    if "pixutils" in ERA_DOWNLOAD_PY:
+        ERA_DOWNLOAD_PY = r'{} {}'.format(os.path.join(python_env,"python"),ERA_DOWNLOAD_PY)
+
 
     #   target download time for each data source
     SAMPLE_TIME = time(hour=12, minute=0)
@@ -57,7 +73,7 @@ class Era5ProcessingBase:
         self.logger.info("Variables to be downloaded: {}.".format(", ".join(self.VARIABLES)))
 
         self._download_era5_data(variables=self.VARIABLES,
-                                 dates=[date(self.args.year, self.args.month, self.args.day)],
+                                 dates=self.args.dates,
                                  times=[self.SAMPLE_TIME],
                                  out_file=self.download_file_path)
 
@@ -77,16 +93,23 @@ class Era5ProcessingBase:
         :param out_file: output_file_path: path to the output file containing the requested fields.  Supported output format is NetCDF, determined by file extension.
         :return: nothing
         """
-        cmd = [self.ERA_DOWNLOAD_PY]
-        cmd.extend(variables)
-        cmd.extend(["--dates"] + [_date.strftime("%Y-%m-%d") for _date in dates])
-        cmd.extend(["--times"] + [_time.strftime("%H:%M") for _time in times])
-        cmd.extend(["--out_file", out_file])
-        self.logger.info("Download: {}".format(cmd))
 
-        proc = subprocess.run(cmd)
-        if not proc.returncode == 0:
-            raise RuntimeError("Download process returned unexpected non-zero exit code '{}'.".format(proc.returncode))
+        if not os.path.exists(out_file):
+            pexe = self.ERA_DOWNLOAD_PY.split(" ")
+            if len(pexe) > 1:
+                cmd = [pexe[0]]
+                cmd.append(pexe[1])
+            else:
+                cmd = [self.ERA_DOWNLOAD_PY]
+            cmd.extend(variables)
+            cmd.extend(["--dates"] + [_date.strftime("%Y-%m-%d") for _date in dates])
+            cmd.extend(["--times"] + [_time.strftime("%H:%M") for _time in times])
+            cmd.extend(["--out_file", out_file])
+            self.logger.info("Download: {}".format(cmd))
+
+            proc = subprocess.run(cmd)
+            if not proc.returncode == 0:
+                raise RuntimeError("Download process returned unexpected non-zero exit code '{}'.".format(proc.returncode))
 
         if not os.path.isfile(out_file):
             raise FileNotFoundError("Output file '{}' could not be located.".format(out_file))
@@ -96,7 +119,7 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
     Specialisation of the base class for downloading and processing precipitation data
     """
     #   variables to be downloaded using the API
-    VARIABLES = ["precipitation_amount_1hour_Accumulation"]
+    VARIABLES = ["total_precipitation"]
 
     @property
     def download_file_path(self):
@@ -157,12 +180,13 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
 
         # Extract data from NetCDF file
         datxr = xarray.open_dataset(input_file_path)
+        print(datxr)
 
         # Select requested time slice
         subset = datxr.sel(time=slice('2000-01', '2020-12'))
 
         # Sum the available cells
-        mean = subset.precipitation_amount_1hour_Accumulation.sum(['lat', 'lon']).load()
+        mean = subset.tp.sum(['latitude', 'longitude']).load()
 
         # Calculate SPI
 
@@ -170,8 +194,10 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         srs = mean.to_pandas()
 
         # Save as json file
-        result = srs.to_json()
-        json.dumps(result, indent=4)
+        json_str = srs.to_json()
+        with open(output_file_path, "w") as outfile:
+            json.dump(json_str, outfile, indent=4)
+
 
 
 

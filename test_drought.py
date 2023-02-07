@@ -5,7 +5,7 @@ import sys
 from sys import exit
 import glob
 import argparse
-from datetime import datetime
+from datetime import date, datetime
 import numpy as np
 
 import logging
@@ -27,12 +27,18 @@ class DROUGHT:
 
         # Transfer args
         self.args = args
+        self.working_dir = self.args.working_dir
 
         # Extract start date
-        date = self.args.start_date.split("/")
-        self.args.day = int(date[0])
-        self.args.month = int(date[1])
-        self.args.year = int(date[2])
+        indate = self.args.start_date.split("/")
+        self.args.day = int(indate[0])
+        self.args.month = int(indate[1])
+        self.args.year = int(indate[2])
+        # Create list of dates between start end end
+        date_list = []
+        date_list.append(date(self.args.year, self.args.month, self.args.day))
+        self.args.dates = date_list
+
 
         # Setup logging
         self.logger = logging.getLogger("test_drought")
@@ -50,8 +56,18 @@ class DROUGHT:
         exit_code = 0
         #try:
 
-        spi = generate_spi.Era5DailyPrecipProcessing(self.args, self.args.working_dir)
+        spi = generate_spi.Era5DailyPrecipProcessing(self.args, self.working_dir) \
+        if self.args.day is None else generate_spi.Era5DailyPrecipProcessing(self.args, self.working_dir)
         output_file_path = spi.output_file_path
+
+        if os.path.exists(output_file_path):
+            self.logger.info("Temperature input '{}' already downloaded.".format(output_file_path))
+        else:
+            downloaded_file = spi.download()
+            processed_file = spi.process()
+            self.logger.info("Downloading and processing of input '{}' completed.".format(output_file_path))
+            assert output_file_path == processed_file
+
         if os.path.exists(output_file_path):
             exit_code = 1
             self.logger.info("SPI processing complete")
