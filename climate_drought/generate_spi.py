@@ -54,13 +54,13 @@ class Era5ProcessingBase:
         self.working_dir = working_dir
 
     @property
-    def date_str(self) -> str:
+    def file_str(self) -> str:
         """
-        Utility function to convert date to a defined string format
-        :return: a date string formatted as "YYYY-MM" or "YYYY-MM-DD", depending on if a day is specified
+        Utility function to convert date and location to a defined string format
+        :return: a date string formatted as "YYYY-MM" or "YYYY-MM-DD", depending on if a day is specified, and latitude/longitude coordinates
         """
-        return "{y:04}-{m:02}-{d:02}".format(y=self.args.year, m=self.args.month, d=self.args.day) \
-            if 'day' in self.args else "{y:04}-{m:02}".format(y=self.args.year, m=self.args.month)
+        return "{y:04}-{m:02}-{d:02}_{la}_{lo}".format(y=self.args.year, m=self.args.month, d=self.args.day, la=self.args.latitude, lo=self.args.longitude) \
+            if 'day' in self.args else "{y:04}-{m:02}_{la}_{lo}".format(y=self.args.year, m=self.args.month, la=self.args.latitude, lo=self.args.longitude)
 
     def download(self) -> str:
         """
@@ -121,13 +121,18 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
     #   variables to be downloaded using the API
     VARIABLES = ["total_precipitation"]
 
+    # SPI Variables
+    Start_year = 1895
+    Calib_year_initial = 1900
+    Calib_year_final = 2000
+
     @property
     def download_file_path(self):
         """
         Returns the path to the file that will be downloaded
         :return: path to the file that will be downloaded
         """
-        return os.path.join(self.working_dir, "precip_{d}.nc".format(d=self.date_str))
+        return os.path.join(self.working_dir, "precip_{d}.nc".format(d=self.file_str))
 
     @property
     def output_file_path(self):
@@ -135,7 +140,7 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         Returns the path to the output file from processing
         :return: path to the output file
         """
-        return os.path.join(self.working_dir, "spi_{d}.json".format(d=self.date_str))
+        return os.path.join(self.working_dir, "spi_{d}.json".format(d=self.file_str))
 
     def __init__(self, args, working_dir: str):
         """
@@ -153,6 +158,44 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         """
         return super().download()
 
+    def convert_precip_to_spi(self) -> None:
+        """
+        Calculates SPI precipitation drought index
+        :param input_file_path: path to file containing precipitation
+        :param output_file_path: path to file to be written containing SPI
+        :return: nothing
+        """
+
+        # Extract data from NetCDF file
+        datxr = xarray.open_dataset(self.download_file_path)
+        self.logger.debug(datxr)
+
+        # Select requested time slice
+        sdate = r'{}-{}'.format(self.args.start_date[0:4],self.args.start_date[4:6])
+        edate = r'{}-{}'.format(self.args.end_date[0:4],self.args.end_date[4:6])
+        subset = datxr.sel(time=slice(sdate, edate))
+
+        # Sum the available cells
+        mean = subset.tp.sum(['latitude', 'longitude']).load()
+
+        # Calculate SPI
+
+        # Convert xarray to dataframe Series
+        df = mean.to_dataframe()
+        self.logger.debug("DF: ")
+
+        # Convert date/time to string and then set this as the index
+        df['day'] = df.index.strftime('%Y-%m-%d')
+        df = df.reset_index(drop=True)
+        df = df.set_index('day')
+        self.logger.debug(df.info())#head())
+
+        # Save as json file
+        json_str = df.to_json()
+        self.logger.debug("JSON: {}".format(json_str))
+        with open(self.output_file_path, "w") as outfile:
+            json.dump(json_str, outfile, indent=4)
+
     def process(self) -> str:
         """
         Carries out processing of the downloaded data.  This is the main functionality that is likely to differ between
@@ -165,47 +208,9 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
             raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.download_file_path))
 
         # Calculates SPI precipitation drought index
-        self._convert_precip_to_spi(input_file_path=self.download_file_path, output_file_path=self.output_file_path)
+        self.convert_precip_to_spi()
 
         return self.output_file_path
-
-    @staticmethod
-    def _convert_precip_to_spi(input_file_path: str, output_file_path: str) -> None:
-        """
-        Calculates SPI precipitation drought index
-        :param input_file_path: path to file containing precipitation
-        :param output_file_path: path to file to be written containing SPI
-        :return: nothing
-        """
-
-        # Extract data from NetCDF file
-        datxr = xarray.open_dataset(input_file_path)
-        print(datxr)
-
-        # Select requested time slice
-        subset = datxr.sel(time=slice('2000-01', '2020-12'))
-
-        # Sum the available cells
-        mean = subset.tp.sum(['latitude', 'longitude']).load()
-
-        # Calculate SPI
-
-        # Convert xarray to dataframe Series
-        df = mean.to_dataframe()
-        print("DF: ")
-
-        # Convert date/time to string and then set this as the index
-        df['day'] = df.index.strftime('%Y-%m-%d')
-        df = df.reset_index(drop=True)
-        df = df.set_index('day')
-        print(df.info())#head())
-
-        # Save as json file
-        json_str = df.to_json()
-        print("JSON: {}".format(json_str))
-        with open(output_file_path, "w") as outfile:
-            json.dump(json_str, outfile, indent=4)
-
 
 
 
