@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 from os.path import expanduser
+import numpy as np
 import subprocess
 from pathlib import Path
 from typing import List
@@ -11,6 +12,8 @@ from datetime import date, time, datetime
 import xarray
 import pandas as pd
 import json
+from climate_drought import indices
+
 # Logging
 logging.basicConfig(level=logging.DEBUG)
 
@@ -72,9 +75,18 @@ class Era5ProcessingBase:
         self.logger.info("Initiating download of ERA5 data.")
         self.logger.info("Variables to be downloaded: {}.".format(", ".join(self.VARIABLES)))
 
+        # Setup area of interest extraction
+        boxsz = 0.1
+        area_box = []
+        area_box.append(self.args.latitude + boxsz)
+        area_box.append(self.args.longitude - boxsz)
+        area_box.append(self.args.latitude - boxsz)
+        area_box.append(self.args.longitude + boxsz)
+
         self._download_era5_data(variables=self.VARIABLES,
                                  dates=self.args.dates,
                                  times=[self.SAMPLE_TIME],
+                                 area=area_box,
                                  out_file=self.download_file_path)
 
         if os.path.isfile(self.download_file_path):
@@ -84,12 +96,13 @@ class Era5ProcessingBase:
 
         return self.download_file_path
 
-    def _download_era5_data(self, variables: List[str], dates: List[date], times: List[time], out_file: str) -> None:
+    def _download_era5_data(self, variables: List[str], dates: List[date], times: List[time], area: str, out_file: str) -> None:
         """
         Executes the ERA5 download script in a separate process.
         :param variables: a list of variables to be downloaded from the Copernicus Climate Data Store.
         :param dates: a list of dates to download data for
         :param times: a list of times to download data for
+        :param area: area of interest box to download data for
         :param out_file: output_file_path: path to the output file containing the requested fields.  Supported output format is NetCDF, determined by file extension.
         :return: nothing
         """
@@ -104,6 +117,7 @@ class Era5ProcessingBase:
             cmd.extend(variables)
             cmd.extend(["--dates"] + [_date.strftime("%Y-%m-%d") for _date in dates])
             cmd.extend(["--times"] + [_time.strftime("%H:%M") for _time in times])
+            cmd.extend(["--area", str(area)])
             cmd.extend(["--out_file", out_file])
             self.logger.info("Download: {}".format(cmd))
 
@@ -120,11 +134,6 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
     """
     #   variables to be downloaded using the API
     VARIABLES = ["total_precipitation"]
-
-    # SPI Variables
-    Start_year = 1895
-    Calib_year_initial = 1900
-    Calib_year_final = 2000
 
     @property
     def download_file_path(self):
@@ -175,19 +184,24 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         edate = r'{}-{}'.format(self.args.end_date[0:4],self.args.end_date[4:6])
         subset = datxr.sel(time=slice(sdate, edate))
 
-        # Sum the available cells
-        mean = subset.tp.sum(['latitude', 'longitude']).load()
+        # Convert to monthly means and extract max of the available cells
+        mean = subset.tp.groupby('time.month').max(['latitude', 'longitude']).load()
+        self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(mean.values), np.nanmin(mean.values), np.nanmax(mean.values)))
 
         # Calculate SPI
+        spi = indices.INDICES(self.args)
+        spi_vals = spi.calc_spi(np.array(mean.values))
+        self.logger.info("SPI: {:.3f} {:.3f}".format(np.nanmin(spi_vals),np.nanmax(spi_vals)))
 
-        # Convert xarray to dataframe Series
+        # Convert xarray to dataframe Series and add SPI
         df = mean.to_dataframe()
-        self.logger.debug("DF: ")
+        df['spi'] = spi_vals
 
         # Convert date/time to string and then set this as the index
         df['day'] = df.index.strftime('%Y-%m-%d')
         df = df.reset_index(drop=True)
         df = df.set_index('day')
+        self.logger.debug("DF: ")
         self.logger.debug(df.info())#head())
 
         # Save as json file
