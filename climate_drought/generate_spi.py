@@ -177,35 +177,48 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
 
         # Extract data from NetCDF file
         datxr = xarray.open_dataset(self.download_file_path)
+        self.logger.debug("Xarray:")
         self.logger.debug(datxr)
 
-        # Select requested time slice
-        sdate = r'{}-{}'.format(self.args.start_date[0:4],self.args.start_date[4:6])
-        edate = r'{}-{}'.format(self.args.end_date[0:4],self.args.end_date[4:6])
-        subset = datxr.sel(time=slice(sdate, edate))
+        # Convert to monthly sums and extract max of the available cells
 
-        # Convert to monthly means and extract max of the available cells
-        mean = subset.tp.groupby('time.month').max(['latitude', 'longitude']).load()
-        self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(mean.values), np.nanmin(mean.values), np.nanmax(mean.values)))
+        # group('time.month') is 1 to 12
+        resamp = datxr.tp.resample(time='1MS').sum()#.max(['latitude', 'longitude']).load()
+        precip = resamp[:,0,:,:]
+
+        self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(precip.values), np.nanmin(precip.values), np.nanmax(precip.values)))
 
         # Calculate SPI
         spi = indices.INDICES(self.args)
-        spi_vals = spi.calc_spi(np.array(mean.values))
-        self.logger.info("SPI: {:.3f} {:.3f}".format(np.nanmin(spi_vals),np.nanmax(spi_vals)))
+        spi_vals = spi.calc_spi(np.array(precip.values).flatten())
+        self.logger.info("SPI, {} values: {:.3f} {:.3f}".format(len(spi_vals), np.nanmin(spi_vals),np.nanmax(spi_vals)))
+        resamp = resamp.sel(expver=1, drop=True)
 
         # Convert xarray to dataframe Series and add SPI
-        df = mean.to_dataframe()
+        df = resamp.to_dataframe()
         df['spi'] = spi_vals
+        df = df.reset_index(level=[1,2])
+        self.logger.debug("DF: ")
+        self.logger.debug(df.head())
+
+        # Select requested time slice
+        sdate = r'{}-{}-{}'.format(self.args.start_date[0:4],self.args.start_date[4:6],self.args.start_date[6:8])
+        edate = r'{}-{}-{}'.format(self.args.end_date[0:4],self.args.end_date[4:6],self.args.end_date[6:8])
+        self.logger.debug("Filtering between {} and {}".format(sdate, edate))
+        df_filtered = df.loc[(df.index >= sdate) & (df.index <= edate)]
 
         # Convert date/time to string and then set this as the index
-        df['day'] = df.index.strftime('%Y-%m-%d')
-        df = df.reset_index(drop=True)
-        df = df.set_index('day')
-        self.logger.debug("DF: ")
-        self.logger.debug(df.info())#head())
+        df_filtered['day'] = df_filtered.index.strftime('%Y-%m')#-%d')
+        df_filtered = df_filtered.reset_index(drop=True)
+        df_filtered = df_filtered.set_index('day')
+        df_filtered = df_filtered.drop(['latitude'], axis=1)
+        df_filtered = df_filtered.drop(['longitude'], axis=1)
+        self.logger.debug("Updated DF: ")
+        self.logger.debug(df_filtered.head())
+        #sys.exit(1)
 
         # Save as json file
-        json_str = df.to_json()
+        json_str = df_filtered.to_json()
         self.logger.debug("JSON: {}".format(json_str))
         with open(self.output_file_path, "w") as outfile:
             json.dump(json_str, outfile, indent=4)

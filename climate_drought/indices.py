@@ -42,7 +42,7 @@ class INDICES:
 
         # scale to 3-month convolutions
         scaled_values = scale_values(values, scale=3, periodicity=Periodicity.monthly)
-        self.logger.debug("scaled values: {}".format(scaled_values))
+        self.logger.debug("scaled values: {:.3f} {:.3f}".format(np.nanmin(scaled_values),np.nanmax(scaled_values)))
 
         # compute the fitting parameters on the scaled data
         alphas, betas = \
@@ -53,8 +53,8 @@ class INDICES:
                 calibration_end_year=self.Calib_year_final,
                 periodicity=compute.Periodicity.monthly,
             )
-        self.logger.debug("alphas: {} betas: {}".format(alphas,betas))
-        gamma_params = {"alphas": alphas, "betas": betas}
+        self.logger.debug("alphas: {:.3f} {:.3f} betas: {:.3f} {:.3f}".format(np.nanmin(alphas),np.nanmax(alphas),np.nanmin(betas),np.nanmax(betas)))
+        gamma_params = {"alpha": alphas, "beta": betas}
 
         spi_gamma_3month = \
             indices.spi(
