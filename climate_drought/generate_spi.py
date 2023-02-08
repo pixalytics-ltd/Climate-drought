@@ -13,6 +13,7 @@ import xarray
 import pandas as pd
 import json
 from climate_drought import indices
+import matplotlib.pyplot as plt
 
 # Logging
 logging.basicConfig(level=logging.DEBUG)
@@ -215,7 +216,20 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         df_filtered = df_filtered.drop(['longitude'], axis=1)
         self.logger.debug("Updated DF: ")
         self.logger.debug(df_filtered.head())
-        #sys.exit(1)
+
+        # Scatter plot
+        if self.args.plot:
+            fig = plt.figure(dpi=900)
+            ax1 = df_filtered['tp'].plot(label='Total precip')
+            ax2 = df_filtered['spi'].plot(secondary_y = True, label='SPI')
+            ax1.set_xlabel('Time')
+            ax1.set_ylabel('Total Precipitation [m]')
+            ax2.set_ylabel('Standardized Precipitation Index (SPI)')
+            ax1.grid(True, linestyle = ':')
+            ax2.grid(True, linestyle=':')
+            pngfile = os.path.join(os.path.dirname(self.output_file_path),"{}-plot.png".format(self.args.product))
+            self.logger.debug("PNG: {}".format(pngfile))
+            plt.savefig(pngfile)
 
         # Save as json file
         json_str = df_filtered.to_json()
