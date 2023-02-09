@@ -61,6 +61,8 @@ class DROUGHT:
         exit_code = 0
         #try:
 
+        # Need all times for accumulation
+        self.args.accum = True
         spi = generate_spi.Era5DailyPrecipProcessing(self.args, self.working_dir) \
         if self.args.day is None else generate_spi.Era5DailyPrecipProcessing(self.args, self.working_dir)
         output_file_path = spi.output_file_path
@@ -114,6 +116,7 @@ def main():
         action="store_true",
         default=False,
     )
+    parser.add_argument("-A", "--accum", action="store_true", default=False, help="Accumulation - not set from cammand line")
     parser.add_argument("-y", "--latitude", type=float, dest="latitude")
     parser.add_argument("-x", "--longitude", type=float, dest="longitude")
     parser.add_argument("-p", "--product", type=str, dest="product", default='none')

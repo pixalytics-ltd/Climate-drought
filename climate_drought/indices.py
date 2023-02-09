@@ -19,7 +19,7 @@ class INDICES:
     FITTED_INDEX_VALID_MAX = 3.09
 
     # SPI Variables
-    Start_year = 1895
+    Start_year = 1985
     Calib_year_initial = 1900
     Calib_year_final = 2000
     Scale_months = 3

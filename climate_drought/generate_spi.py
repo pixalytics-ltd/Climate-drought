@@ -84,10 +84,18 @@ class Era5ProcessingBase:
         area_box.append(self.args.latitude - boxsz)
         area_box.append(self.args.longitude + boxsz)
 
+        if self.args.accum:
+            times = []
+            for i in range(24):
+                times.append(time(hour=i, minute=0))
+        else:
+            times = [self.SAMPLE_TIME]
+
         self._download_era5_data(variables=self.VARIABLES,
                                  dates=self.args.dates,
-                                 times=[self.SAMPLE_TIME],
+                                 times=times,
                                  area=area_box,
+                                 monthly=self.args.accum,
                                  out_file=self.download_file_path)
 
         if os.path.isfile(self.download_file_path):
@@ -97,13 +105,14 @@ class Era5ProcessingBase:
 
         return self.download_file_path
 
-    def _download_era5_data(self, variables: List[str], dates: List[date], times: List[time], area: str, out_file: str) -> None:
+    def _download_era5_data(self, variables: List[str], dates: List[date], times: List[time], area: str, monthly: str, out_file: str) -> None:
         """
         Executes the ERA5 download script in a separate process.
         :param variables: a list of variables to be downloaded from the Copernicus Climate Data Store.
         :param dates: a list of dates to download data for
         :param times: a list of times to download data for
         :param area: area of interest box to download data for
+        :param monthly: download monthly reanalysis data
         :param out_file: output_file_path: path to the output file containing the requested fields.  Supported output format is NetCDF, determined by file extension.
         :return: nothing
         """
@@ -119,6 +128,8 @@ class Era5ProcessingBase:
             cmd.extend(["--dates"] + [_date.strftime("%Y-%m-%d") for _date in dates])
             cmd.extend(["--times"] + [_time.strftime("%H:%M") for _time in times])
             cmd.extend(["--area", str(area)])
+            if monthly:
+                cmd.extend(["--monthly"])
             cmd.extend(["--out_file", out_file])
             self.logger.info("Download: {}".format(cmd))
 
@@ -182,10 +193,12 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         self.logger.debug(datxr)
 
         # Convert to monthly sums and extract max of the available cells
-
-        # group('time.month') is 1 to 12
-        resamp = datxr.tp.resample(time='1MS').sum()#.max(['latitude', 'longitude']).load()
-        precip = resamp[:,0,:,:]
+        # group('time.month') is 1 to 12 while resamp is monthly data
+        if self.args.accum:
+            resamp = datxr.tp.max(['latitude', 'longitude']).load()
+        else:
+            resamp = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
+        precip = resamp[:, 0]
 
         self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(precip.values), np.nanmin(precip.values), np.nanmax(precip.values)))
 
@@ -198,7 +211,7 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         # Convert xarray to dataframe Series and add SPI
         df = resamp.to_dataframe()
         df['spi'] = spi_vals
-        df = df.reset_index(level=[1,2])
+        #df = df.reset_index(level=[1,2])
         self.logger.debug("DF: ")
         self.logger.debug(df.head())
 
@@ -212,8 +225,8 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         df_filtered['day'] = df_filtered.index.strftime('%Y-%m')#-%d')
         df_filtered = df_filtered.reset_index(drop=True)
         df_filtered = df_filtered.set_index('day')
-        df_filtered = df_filtered.drop(['latitude'], axis=1)
-        df_filtered = df_filtered.drop(['longitude'], axis=1)
+        #df_filtered = df_filtered.drop(['latitude'], axis=1)
+        #df_filtered = df_filtered.drop(['longitude'], axis=1)
         self.logger.debug("Updated DF: ")
         self.logger.debug(df_filtered.head())
 
