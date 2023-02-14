@@ -32,7 +32,7 @@ class INDICES:
         # Setup logging
         self.logger = logging.getLogger("drought_indices")
         self.logger.setLevel(
-            logging.DEBUG if "verbose" in args and args.verbose else logging.INFO
+            logging.DEBUG if args.verbose else logging.INFO
         )
 
         self.logger.info("\n")

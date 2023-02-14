@@ -1,7 +1,7 @@
 
 import datetime
 import pandas as pd
-
+import argparse
 
 
 def daterange(sdate, edate, rtv):
@@ -37,3 +37,18 @@ def daterange(sdate, edate, rtv):
                 y = t[0:4] + str(tt[7])
         dates.append(y)
     return dates
+
+class setup_args:
+    working_dir = '/home/seadas/webservice/CLIMATE'
+    outdir = '/home/seadas/webservice/CLIMATE'
+    verbose=True
+    accum=True
+    latitude=52.5
+    longitude=1.25
+    product='SPI'
+    plot=False
+    type='none'
+    start_date = '20200101'
+    end_date ='20221231'
+
+

@@ -7,13 +7,13 @@ import glob
 import argparse
 from datetime import date, datetime
 import numpy as np
+
+# Links from Climate-drought repository
+from climate_drought import generate_spi
 from climate_drought import utils
 
 import logging
 logging.basicConfig(level=logging.INFO)
-
-# Links from Climate-drought repository
-from climate_drought import generate_spi
 
 # ERA5 download range
 Sdate = '19850101'
