@@ -6,6 +6,7 @@ dependencies:
   - birdy
   - gdal>=3.4.1
   - matplotlib
+  - pip
   - python>=3.8.16
   - xarray
   - pip:
