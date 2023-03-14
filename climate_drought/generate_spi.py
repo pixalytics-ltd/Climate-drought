@@ -201,204 +201,94 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
 
     def generate_json(self) -> None:
         """
+         Generates JSON file for data
+         :return: path to the json file
+         """
+        self.logger.debug("JSON: {}".format(self.json_str))
+        with open(self.output_file_path, "w") as outfile:
+            json.dump(self.json_str, outfile, indent=4)
+
+    def generate_record(self) -> None:
+        """
          Generates OGC API Record JSON file
          :return: path to the json file
          """
-        CONFIGURATION_FILE_PATH = os.path.join(os.path.dirname(__file__), "configuration-record.yaml")
-        try:
-            with open(CONFIGURATION_FILE_PATH, "r") as config_file:
-                config = yaml.safe_load(config_file)
-                catalog_id = config["catalog_id"]
-                catalog_title = config["catalog_title"]
-                catalog_desc = config["catalog_desc"]
-                url = config["url"]
-                temp = config["files"]
-                files = temp.split(",")
-                out_default = config["output_dir"]
-                gsd = config["gsd"]
-                yaml_file = config["yaml_file"]
-                provider_name = config["provider_name"]
-                provider_url = config["provider_url"]
 
-                logging.debug("Configuration was loaded from '{}'.".format(CONFIGURATION_FILE_PATH))
-        except (FileNotFoundError, IOError):
-            logging.warning("Unable to load default configuration from '{}', relying on input variables.".format(
-                CONFIGURATION_FILE_PATH))
-            sys.exit(1)
+        # Read generic YML
+        yaml_file = 'drought-ogc-record.yml'
+        with open(os.path.join(os.path.dirname(__file__), yaml_file)) as f:
+            # use safe_load instead load
+            dataMap = yaml.safe_load(f)
+            f.close()
 
-        # Read version
-        f = open(os.path.join(os.path.dirname(__file__), '__init__.py'), "r")
-        version_file = f.read()
-        version_line = re.search(r"^__version__ = ['\"]([^'\"]*)['\"]", version_file, re.M)
-        self.logger.info("Running {}".format(version_line.group()))
-        version = version_line.group().split("'")[1]
+        # Define output record yaml
+        out_yaml = os.path.join(os.path.dirname(__file__), os.path.splitext(os.path.basename(yaml_file))[0] + "-updated.yml")
 
-        # Extract date range
-        dateval = datetime.utcnow()
-        end_dateval = dateval
-        print("Date range {} to {}".format(dateval, end_dateval))
+        # Update bounding box
+        self.logger.info("dataMap: {} ".format(dataMap['identification']['extents']['spatial']))
+        yaml_dict = {}
+        float_bbox = '[{:.3f},{:.3f},{:.3f},{:.3f}]'.format(bbox[0], bbox[1], bbox[2], bbox[3])
+        self.args.latitude, lo = self.args.longitude
+        yaml_dict.update({'bbox': ast.literal_eval(float_bbox)})
+        #yaml_dict.update({'crs': ast.literal_eval(dst_crs.split(":")[1])})
 
-        # Create catalog sub_folder - delete if exists
-        cat_folder = os.path.join(outdir, "{}-record-v{}".format(catalog_id, version))
-        if os.path.exists(cat_folder):
-            shutil.rmtree(cat_folder)
-        os.mkdir(cat_folder)
+        # remove single quotes
+        res = {key.replace("'", ""): val for key, val in yaml_dict.items()}
+        dataMap['identification']['extents']['spatial'] = [res]
+        self.logger.info("Modified dataMap: {} ".format(dataMap['identification']['extents']['spatial']))
 
-       # Create catalog information
-        self.logger.info("Creating OGC Records Catalog")
-        catalog_dict = {}
-        catalog_dict.update({'cat_id': catalog_id})
-        catalog_dict.update({'cat_description': catalog_desc})
-        cat_begin = dateval.strftime("%Y-%m-%d")
-        cat_end = end_dateval.strftime("%Y-%m-%d")
-        catalog_dict.update({'cat_begin': cat_begin})
-        catalog_dict.update({'cat_end': cat_end})
+        # Update dates
+        self.logger.debug("dataMap: {} ".format(dataMap['identification']['extents']['temporal']))
+        fdate = self.json_file.split("_")[0]
+        dateval = datetime(int(fdate[0:4]), int(fdate[4:6]), int(fdate[6:8]), int(fdate[9:11]), int(fdate[11:13]),int(fdate[13:15]))
+        date_string = dateval.strftime("%Y-%m-%d")
+        end_date_string = end_dateval.strftime("%Y-%m-%d")
 
-        # Loop for each file to create an OGC record for each
-        link_dict = {}
-        for count, file in enumerate(files):
+        yaml_dict = {}
+        yaml_dict.update({'begin': date_string})
+        yaml_dict.update({'end': end_date_string})
+        dataMap['identification']['extents']['temporal'] = [yaml_dict]
+        self.logger.debug("Modified dataMap: {} ".format(dataMap['identification']['extents']['temporal']))
 
-            # For each file, update generic record yaml
-            out_yaml = os.path.join(os.path.dirname(__file__), os.path.splitext(os.path.basename(yaml_file))[0] + "-updated.yml")
+        # Update index filename
+        outdir = os.path.dirname(self.output_file_path)
+        self.logger.debug("dataMap: {} ".format(dataMap['metadata']['dataseturi']))
+        dataMap['metadata']['dataseturi'] = outdir + self.json_file
+        self.logger.debug("Modified dataMap: {} ".format(dataMap['metadata']['dataseturi']))
 
-            # Read YML contents
-            with open(os.path.join(os.path.dirname(__file__), yaml_file)) as f:
-                # use safe_load instead load
-                dataMap = yaml.safe_load(f)
-                f.close()
+        # Updated url and file type
+        dataMap['distribution']['s3']['url'] = outdir + self.json_file
+        if os.path.splitext(self.json_file) == "json":
+            dataMap['distribution']['s3']['type'] = 'JSON'
+        else:
+            dataMap['distribution']['s3']['type'] = 'COG'
+        self.logger.debug("Modified dataMap type: {} ".format(dataMap['distribution']['s3']['type']))
+        self.logger.debug("Modified dataMap url: {} ".format(dataMap['distribution']['s3']['url']))
 
-            # Update bounding box
-            self.logger.info("dataMap: {} ".format(dataMap['identification']['extents']['spatial']))
-            yaml_dict = {}
-            float_bbox = '[{:.3f},{:.3f},{:.3f},{:.3f}]'.format(bbox[0], bbox[1], bbox[2], bbox[3])
-            yaml_dict.update({'bbox': ast.literal_eval(float_bbox)})
-            yaml_dict.update({'crs': ast.literal_eval(dst_crs.split(":")[1])})
-            # remove single quotes
-            res = {key.replace("'", ""): val for key, val in yaml_dict.items()}
-            dataMap['identification']['extents']['spatial'] = [res]
-            self.logger.info("Modified dataMap: {} ".format(dataMap['identification']['extents']['spatial']))
+        # Remove single quotes
+        dataDict = {re.sub("'", "", key): val for key, val in dataMap.items()}
 
-            # Update dates
-            self.logger.debug("dataMap: {} ".format(dataMap['identification']['extents']['temporal']))
-            fdate = file.split("_")[0]
-            dateval = datetime(int(fdate[0:4]), int(fdate[4:6]), int(fdate[6:8]), int(fdate[9:11]), int(fdate[11:13]),int(fdate[13:15]))
-            date_string = dateval.strftime("%Y-%m-%d")
-            end_date_string = end_dateval.strftime("%Y-%m-%d")
+        # Output modified version of YAML
+        with open(out_yaml, 'w') as f:
+            yaml.dump(dataDict, f)
+            f.close()
 
-            yaml_dict = {}
-            yaml_dict.update({'begin': date_string})
-            yaml_dict.update({'end': end_date_string})
-            dataMap['identification']['extents']['temporal'] = [yaml_dict]
-            self.logger.debug("Modified dataMap: {} ".format(dataMap['identification']['extents']['temporal']))
+        # Read modified YAML into dictionary
+        mcf_dict = read_mcf(out_yaml)
 
-            # Update filename
-            self.logger.debug("dataMap: {} ".format(dataMap['metadata']['dataseturi']))
-            dataMap['metadata']['dataseturi'] = url + file
-            self.logger.debug("Modified dataMap: {} ".format(dataMap['metadata']['dataseturi']))
+        # Choose API Records output schema
+        records_os = OGCAPIRecordOutputSchema()
 
-            # Updated url and file type
-            dataMap['distribution']['s3']['url'] = url + file
-            if os.path.splitext(file) == "tif":
-                dataMap['distribution']['s3']['type'] = 'GeoTIFF'
-            else:
-                dataMap['distribution']['s3']['type'] = 'NetCDF'
-            self.logger.debug("Modified dataMap type: {} ".format(dataMap['distribution']['s3']['type']))
-            self.logger.debug("Modified dataMap url: {} ".format(dataMap['distribution']['s3']['url']))
+        # Default schema
+        json_string = records_os.write(mcf_dict)
 
-            # Remove single quotes
-            dataDict = {re.sub("'", "", key): val for key, val in dataMap.items()}
+        # Write to record file to disk
+        json_file = os.path.join(outdir, "record.json")
+        with open(json_file, 'w') as ff:
+            ff.write(json_string)
+            ff.close()
 
-            # Output modified version of YAML
-            with open(out_yaml, 'w') as f:
-                yaml.dump(dataDict, f)
-                f.close()
-
-            # Read modified YAML into dictionary
-            mcf_dict = read_mcf(out_yaml)
-
-            # JSON dataset files
-            dataset = "{}{}".format(os.path.basename(yaml_file).split(".")[0], count + 1)
-            # create dataset folder
-            dset_folder = os.path.join(cat_folder, dataset)
-            os.mkdir(dset_folder)
-            json_file = os.path.join(dset_folder, dataset + ".json")
-            link_dict.update({dataset: "{}/".format(dataset) + os.path.basename(json_file)})
-
-            # Choose API Records output schema
-            records_os = OGCAPIRecordOutputSchema()
-
-            # Default schema
-            json_string = records_os.write(mcf_dict)
-
-            # Write to disk
-            with open(json_file, 'w') as ff:
-                ff.write(json_string)
-                ff.close()
-
-            # Last loop
-            if files[-1] == files[count]:
-
-                # For the catalog, update generic record yaml
-                cat_yaml = yaml_file.replace("record","catalog")
-                out_yaml = os.path.join(os.path.dirname(__file__), os.path.splitext(os.path.basename(cat_yaml))[0] + "-updated.yml")
-
-                # Read original YML contents
-                print(out_yaml)
-                with open(os.path.join(os.path.dirname(__file__), cat_yaml)) as f:
-                    # use safe_load instead of load
-                    dataMap = yaml.safe_load(f)
-                    f.close()
-
-                # Update details
-                dataMap['identification']['extents']['spatial'] = [res]
-                yaml_dict = {}
-                yaml_dict.update({'begin': date_string})
-                yaml_dict.update({'end': end_date_string})
-                dataMap['identification']['extents']['temporal'] = [yaml_dict]
-
-                # Remove single quotes
-                dataDict = {re.sub("'", "", key): val for key, val in dataMap.items()}
-
-                # Output modified version of YAML
-                with open(out_yaml, 'w') as f:
-                    yaml.dump(dataDict, f)
-                    f.close()
-
-                # Read modified YAML into dictionary
-                mcf_dict = read_mcf(out_yaml)
-
-                # Add record links
-                catalog_dict.update({'cat_file': link_dict})
-                mcf_dict.update(catalog_dict)
-
-                # Catalog adjustments
-                mcf_dict['metadata']['identifier'] = catalog_id
-                mcf_dict['identification']['title'] = catalog_title
-                mcf_dict['identification']['name'] = 'sam'
-                mcf_dict['identification']['abstract'] = catalog_desc
-
-                now_dateval = datetime.utcnow().strftime("%Y-%m-%d")
-
-                mcf_dict['identification']['dates']['creation'] = now_dateval
-                mcf_dict['identification']['dates']['revision'] = now_dateval
-                mcf_dict['distribution']['s3']['url'] = link_dict
-                print("Links: ",mcf_dict)
-                # Choose API Dataset Record as catalog
-                # https://github.com/cholmes/ogc-collection/blob/main/ogc-dataset-record-spec.md - see examples
-                records_os = OGCAPIRecordOutputSchema()
-
-                # Default catalog schema
-                #print(mcf_dict)
-                json_string = records_os.write(mcf_dict)
-                logging.debug(json_string)
-
-                # Write catalog to disk
-                cat_file = os.path.join(cat_folder, "catalog.json")
-                with open(cat_file, 'w') as ff:
-                    ff.write(json_string)
-                    ff.close()
-
-        self.logger.info("Processing completed successfully for {}".format(cat_folder))
+        self.logger.info("Processing completed successfully for {}".format(json_file))
 
 
     def convert_precip_to_spi(self) -> None:
@@ -467,10 +357,8 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
             plt.savefig(pngfile)
 
         # Save as json file
-        json_str = df_filtered.to_json()
-        self.logger.debug("JSON: {}".format(json_str))
-        with open(self.output_file_path, "w") as outfile:
-            json.dump(json_str, outfile, indent=4)
+        self.json_str = df_filtered.to_json()
+
 
     def process(self) -> str:
         """
