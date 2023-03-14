@@ -39,8 +39,8 @@ def daterange(sdate, edate, rtv):
     return dates
 
 class setup_args:
-    working_dir = '~/webservice/CLIMATE'
-    outdir = '~/webservice/CLIMATE'
+    working_dir = '/data/webservice/CLIMATE'
+    outdir = '/data/webservice/CLIMATE'
     verbose=True
     accum=True
     latitude=52.5
