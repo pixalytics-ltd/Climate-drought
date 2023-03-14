@@ -234,8 +234,8 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         # Update bounding box
         self.logger.info("dataMap: {} ".format(dataMap['identification']['extents']['spatial']))
         yaml_dict = {}
-        float_bbox = '[{:.3f},{:.3f},{:.3f},{:.3f}]'.format(bbox[0], bbox[1], bbox[2], bbox[3])
-        self.args.latitude, lo = self.args.longitude
+        ## [bounds.left, bounds.bottom, bounds.right, bounds.top]
+        float_bbox = '[{:.3f},{:.3f},{:.3f},{:.3f}]'.format(float(self.args.longitude)-0.1, float(self.args.latitude)-0.1, float(self.args.longitude)+0.1, float(self.args.latitude)+0.1)
         yaml_dict.update({'bbox': ast.literal_eval(float_bbox)})
         #yaml_dict.update({'crs': ast.literal_eval(dst_crs.split(":")[1])})
 
@@ -247,9 +247,8 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         # Update dates
         self.logger.debug("dataMap: {} ".format(dataMap['identification']['extents']['temporal']))
         fdate = self.json_file.split("_")[0]
-        dateval = datetime(int(fdate[0:4]), int(fdate[4:6]), int(fdate[6:8]), int(fdate[9:11]), int(fdate[11:13]),int(fdate[13:15]))
-        date_string = dateval.strftime("%Y-%m-%d")
-        end_date_string = end_dateval.strftime("%Y-%m-%d")
+        date_string = self.args.dates[0].strftime("%Y-%m-%d")
+        end_date_string = self.args.dates[-1].strftime("%Y-%m-%d")
 
         yaml_dict = {}
         yaml_dict.update({'begin': date_string})

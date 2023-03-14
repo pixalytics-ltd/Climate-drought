@@ -14,6 +14,7 @@ dependencies:
     - geojson
     - netcdf4
     - numba
+    - pygeometa
     - scipy
     - sentinelsat
 prefix: ~/anaconda3/envs/climate_env
