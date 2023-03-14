@@ -1,7 +1,8 @@
 import logging
 import os
-import sys
 from os.path import expanduser
+import shutil
+import sys
 import numpy as np
 import subprocess
 from pathlib import Path
@@ -12,8 +13,16 @@ from datetime import date, time, datetime
 import xarray
 import pandas as pd
 import json
+import geojson
+from geojson import Feature, FeatureCollection, Point
 from climate_drought import indices, utils
 import matplotlib.pyplot as plt
+# pygeometa for OGC API record creation
+import yaml
+import ast
+import re
+from pygeometa.core import read_mcf
+from pygeometa.schemas.ogcapi_records import OGCAPIRecordOutputSchema
 
 # Logging
 logging.basicConfig(level=logging.DEBUG)
@@ -192,6 +201,102 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         """
         return super().download()
 
+    def generate_geojson(self) -> None:
+        """
+         Generates GeoJSON file for data
+         :return: path to the geojson file
+         """
+        dump = geojson.dumps(self.feature_collection, indent=4)
+        #self.logger.info("JSON: ",dump)
+
+        # Reload to check formatting
+        json_x = geojson.loads(dump)
+
+        with open(self.output_file_path, "w", encoding='utf-8') as outfile:
+            geojson.dump(json_x, outfile, indent=4)
+
+    def generate_record(self) -> None:
+        """
+         Generates OGC API Record JSON file
+         :return: path to the json file
+         """
+
+        # Read generic YML
+        yaml_file = 'drought-ogc-record.yml'
+        with open(os.path.join(os.path.dirname(__file__), yaml_file)) as f:
+            # use safe_load instead load
+            dataMap = yaml.safe_load(f)
+            f.close()
+
+        # Define output record yaml
+        out_yaml = os.path.join(os.path.dirname(__file__), os.path.splitext(os.path.basename(yaml_file))[0] + "-updated.yml")
+
+        # Update bounding box
+        self.logger.info("dataMap: {} ".format(dataMap['identification']['extents']['spatial']))
+        yaml_dict = {}
+        ## [bounds.left, bounds.bottom, bounds.right, bounds.top]
+        float_bbox = '[{:.3f},{:.3f},{:.3f},{:.3f}]'.format(float(self.args.longitude)-0.1, float(self.args.latitude)-0.1, float(self.args.longitude)+0.1, float(self.args.latitude)+0.1)
+        yaml_dict.update({'bbox': ast.literal_eval(float_bbox)})
+        #yaml_dict.update({'crs': ast.literal_eval(dst_crs.split(":")[1])})
+
+        # remove single quotes
+        res = {key.replace("'", ""): val for key, val in yaml_dict.items()}
+        dataMap['identification']['extents']['spatial'] = [res]
+        self.logger.info("Modified dataMap: {} ".format(dataMap['identification']['extents']['spatial']))
+
+        # Update dates
+        self.logger.debug("dataMap: {} ".format(dataMap['identification']['extents']['temporal']))
+        fdate = self.json_file.split("_")[0]
+        date_string = self.args.dates[0].strftime("%Y-%m-%d")
+        end_date_string = self.args.dates[-1].strftime("%Y-%m-%d")
+
+        yaml_dict = {}
+        yaml_dict.update({'begin': date_string})
+        yaml_dict.update({'end': end_date_string})
+        dataMap['identification']['extents']['temporal'] = [yaml_dict]
+        self.logger.debug("Modified dataMap: {} ".format(dataMap['identification']['extents']['temporal']))
+
+        # Update index filename
+        outdir = os.path.dirname(self.output_file_path)
+        self.logger.debug("dataMap: {} ".format(dataMap['metadata']['dataseturi']))
+        dataMap['metadata']['dataseturi'] = outdir + self.json_file
+        self.logger.debug("Modified dataMap: {} ".format(dataMap['metadata']['dataseturi']))
+
+        # Updated url and file type
+        dataMap['distribution']['s3']['url'] = outdir + self.json_file
+        if os.path.splitext(self.json_file) == "json":
+            dataMap['distribution']['s3']['type'] = 'JSON'
+        else:
+            dataMap['distribution']['s3']['type'] = 'COG'
+        self.logger.debug("Modified dataMap type: {} ".format(dataMap['distribution']['s3']['type']))
+        self.logger.debug("Modified dataMap url: {} ".format(dataMap['distribution']['s3']['url']))
+
+        # Remove single quotes
+        dataDict = {re.sub("'", "", key): val for key, val in dataMap.items()}
+
+        # Output modified version of YAML
+        with open(out_yaml, 'w') as f:
+            yaml.dump(dataDict, f)
+            f.close()
+
+        # Read modified YAML into dictionary
+        mcf_dict = read_mcf(out_yaml)
+
+        # Choose API Records output schema
+        records_os = OGCAPIRecordOutputSchema()
+
+        # Default schema
+        json_string = records_os.write(mcf_dict)
+
+        # Write to record file to disk
+        json_file = os.path.join(outdir, "record.json")
+        with open(json_file, 'w') as ff:
+            ff.write(json_string)
+            ff.close()
+
+        self.logger.info("Processing completed successfully for {}".format(json_file))
+
+
     def convert_precip_to_spi(self) -> None:
         """
         Calculates SPI precipitation drought index
@@ -235,11 +340,13 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         df_filtered = df.loc[(df.index >= sdate) & (df.index <= edate)]
 
         # Convert date/time to string and then set this as the index
-        df_filtered['day'] = df_filtered.index.strftime('%Y-%m')#-%d')
-        df_filtered = df_filtered.reset_index(drop=True)
-        df_filtered = df_filtered.set_index('day')
-        #df_filtered = df_filtered.drop(['latitude'], axis=1)
+        df_filtered['StartDateTime'] = df_filtered.index.strftime('%Y-%m-%dT00:00:00')
+        #df_filtered = df_filtered.reset_index(drop=True)
+        #df_filtered = df_filtered.set_index('day')
+       #df_filtered = df_filtered.drop(['latitude'], axis=1)
         #df_filtered = df_filtered.drop(['longitude'], axis=1)
+        # Remove any NaN values
+        df_filtered = df_filtered[~df_filtered.isnull().any(axis=1)]
         self.logger.debug("Updated DF: ")
         self.logger.debug(df_filtered.head())
 
@@ -257,11 +364,24 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
             self.logger.debug("PNG: {}".format(pngfile))
             plt.savefig(pngfile)
 
-        # Save as json file
-        json_str = df_filtered.to_json()
-        self.logger.debug("JSON: {}".format(json_str))
-        with open(self.output_file_path, "w") as outfile:
-            json.dump(json_str, outfile, indent=4)
+        # Build GeoJSON object
+        self.feature_collection = {"type": "FeatureCollection", "features": []}
+
+        for i in df_filtered.index:
+            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [self.args.longitude, self.args.latitude]}, "properties": {}}
+
+            # Extract columns as properties
+            property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
+            parsed = json.loads(property)
+            print("Sam: ",parsed)
+            feature['properties'] = parsed
+
+            # Add feature
+            self.feature_collection['features'].append(feature)
+
+        # Generate output file
+        self.generate_geojson()
+
 
     def process(self) -> str:
         """

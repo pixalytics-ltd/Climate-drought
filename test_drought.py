@@ -68,11 +68,11 @@ class DROUGHT:
         output_file_path = spi.output_file_path
 
         if os.path.exists(output_file_path):
-            self.logger.info("Temperature input '{}' already downloaded.".format(output_file_path))
+            self.logger.info("Processed file '{}' already exists.".format(output_file_path))
         else:
             downloaded_file = spi.download()
             processed_file = spi.process()
-            self.logger.info("Downloading and processing of input '{}' completed.".format(output_file_path))
+            self.logger.info("Downloading and processing complete for '{}' completed.".format(output_file_path))
             assert output_file_path == processed_file
 
         if os.path.exists(output_file_path):

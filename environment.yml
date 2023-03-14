@@ -6,6 +6,7 @@ dependencies:
   - birdy
   - gdal>=3.4.1
   - matplotlib
+  - pip
   - python>=3.8.16
   - xarray
   - pip:
@@ -13,6 +14,7 @@ dependencies:
     - geojson
     - netcdf4
     - numba
+    - pygeometa
     - scipy
     - sentinelsat
 prefix: ~/anaconda3/envs/climate_env
