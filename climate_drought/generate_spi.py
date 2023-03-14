@@ -13,6 +13,8 @@ from datetime import date, time, datetime
 import xarray
 import pandas as pd
 import json
+import geojson
+from geojson import Feature, FeatureCollection, Point
 from climate_drought import indices, utils
 import matplotlib.pyplot as plt
 # pygeometa for OGC API record creation
@@ -20,7 +22,7 @@ import yaml
 import ast
 import re
 from pygeometa.core import read_mcf
-from pygeometa.schemas.ogcapi_dataset_records import OGCAPIDRecordOutputSchema
+from pygeometa.schemas.ogcapi_records import OGCAPIRecordOutputSchema
 
 # Logging
 logging.basicConfig(level=logging.DEBUG)
@@ -199,14 +201,19 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         """
         return super().download()
 
-    def generate_json(self) -> None:
+    def generate_geojson(self) -> None:
         """
-         Generates JSON file for data
-         :return: path to the json file
+         Generates GeoJSON file for data
+         :return: path to the geojson file
          """
-        self.logger.debug("JSON: {}".format(self.json_str))
-        with open(self.output_file_path, "w") as outfile:
-            json.dump(self.json_str, outfile, indent=4)
+        dump = geojson.dumps(self.feature_collection, indent=4)
+        #self.logger.info("JSON: ",dump)
+
+        # Reload to check formatting
+        json_x = geojson.loads(dump)
+
+        with open(self.output_file_path, "w", encoding='utf-8') as outfile:
+            geojson.dump(json_x, outfile, indent=4)
 
     def generate_record(self) -> None:
         """
@@ -334,11 +341,13 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         df_filtered = df.loc[(df.index >= sdate) & (df.index <= edate)]
 
         # Convert date/time to string and then set this as the index
-        df_filtered['day'] = df_filtered.index.strftime('%Y-%m')#-%d')
-        df_filtered = df_filtered.reset_index(drop=True)
-        df_filtered = df_filtered.set_index('day')
-        #df_filtered = df_filtered.drop(['latitude'], axis=1)
+        df_filtered['StartDateTime'] = df_filtered.index.strftime('%Y-%m-%dT00:00:00')
+        #df_filtered = df_filtered.reset_index(drop=True)
+        #df_filtered = df_filtered.set_index('day')
+       #df_filtered = df_filtered.drop(['latitude'], axis=1)
         #df_filtered = df_filtered.drop(['longitude'], axis=1)
+        # Remove any NaN values
+        df_filtered = df_filtered[~df_filtered.isnull().any(axis=1)]
         self.logger.debug("Updated DF: ")
         self.logger.debug(df_filtered.head())
 
@@ -356,8 +365,23 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
             self.logger.debug("PNG: {}".format(pngfile))
             plt.savefig(pngfile)
 
-        # Save as json file
-        self.json_str = df_filtered.to_json()
+        # Build GeoJSON object
+        self.feature_collection = {"type": "FeatureCollection", "features": []}
+
+        for i in df_filtered.index:
+            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [self.args.longitude, self.args.latitude]}, "properties": {}}
+
+            # Extract columns as properties
+            property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
+            parsed = json.loads(property)
+            print("Sam: ",parsed)
+            feature['properties'] = parsed
+
+            # Add feature
+            self.feature_collection['features'].append(feature)
+
+        # Generate output file
+        self.generate_geojson()
 
 
     def process(self) -> str:
