@@ -7,7 +7,7 @@ dependencies:
   - gdal>=3.4.1
   - matplotlib
   - pip
-  - python>=3.8.16
+  - python=3.8.16
   - xarray
   - pip:
     - cdsapi
