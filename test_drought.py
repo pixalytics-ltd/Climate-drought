@@ -32,7 +32,7 @@ class DROUGHT:
 
         # Transfer args
         self.args = args
-        self.working_dir = self.args.working_dir
+        self.working_dir = self.args.outdir
 
         # Create list of dates between max start and end dates
         dates = utils.daterange(Sdate, Edate, 0)
@@ -63,6 +63,7 @@ class DROUGHT:
 
         # Need all times for accumulation
         self.args.accum = True
+        self.working_dir = self.args.outdir
         spi = generate_spi.Era5DailyPrecipProcessing(self.args, self.working_dir) \
         if self.args.day is None else generate_spi.Era5DailyPrecipProcessing(self.args, self.working_dir)
         output_file_path = spi.output_file_path
@@ -93,14 +94,6 @@ class DROUGHT:
 def main():
     parser = argparse.ArgumentParser(description="Test Drought Indices")
 
-    parser.add_argument(
-        "-w",
-        "--working_dir",
-        type=str,
-        dest="working_dir",
-        default=True,
-        help="Working folder",
-    )
     parser.add_argument(
         "-o",
         "--outdir",
