@@ -17,6 +17,8 @@ import geojson
 from geojson import Feature, FeatureCollection, Point
 from climate_drought import indices, utils
 import matplotlib.pyplot as plt
+# ERA download
+from pixutils import era_download
 # pygeometa for OGC API record creation
 import yaml
 import ast
@@ -37,24 +39,6 @@ class Era5ProcessingBase:
     Provides some basic functionality that can be used by different implementation specific strategies for different
     data sources
     """
-    # Code to downloading data from the Copernicus Climate Data Store.
-    # If the 'pixutils' module is installed this script should be located in the 'bin' directory of the Conda environment else setup link to pixutils
-
-    era_download = "era_download.py"
-    home = expanduser("~")
-    python_env = os.path.join(home, "anaconda3/envs/climate_env/bin")
-    ERA_DOWNLOAD_PY = os.path.join(python_env, era_download)
-    if not os.path.exists(ERA_DOWNLOAD_PY):
-        ERA_DOWNLOAD_PY = os.path.join("pixutils", era_download)
-
-    if not os.path.exists(ERA_DOWNLOAD_PY):
-        print("could not find {}, exiting".format(era_download))
-        sys.exit(1)
-
-    # Need to call from python env is not in bin folder
-    if "pixutils" in ERA_DOWNLOAD_PY:
-        ERA_DOWNLOAD_PY = r'{} {}'.format(os.path.join(python_env,"python"),ERA_DOWNLOAD_PY)
-
 
     #   target download time for each data source
     SAMPLE_TIME = time(hour=12, minute=0)
@@ -101,10 +85,10 @@ class Era5ProcessingBase:
         # Setup area of interest extraction
         boxsz = 0.1
         area_box = []
-        area_box.append(self.args.latitude + boxsz)
-        area_box.append(self.args.longitude - boxsz)
-        area_box.append(self.args.latitude - boxsz)
-        area_box.append(self.args.longitude + boxsz)
+        area_box.append(float(self.args.latitude) + boxsz)
+        area_box.append(float(self.args.longitude) - boxsz)
+        area_box.append(float(self.args.latitude) - boxsz)
+        area_box.append(float(self.args.longitude) + boxsz)
 
         if self.args.accum:
             times = []
@@ -140,24 +124,17 @@ class Era5ProcessingBase:
         """
 
         if not os.path.exists(out_file):
-            pexe = self.ERA_DOWNLOAD_PY.split(" ")
-            if len(pexe) > 1:
-                cmd = [pexe[0]]
-                cmd.append(pexe[1])
-            else:
-                cmd = [self.ERA_DOWNLOAD_PY]
-            cmd.extend(variables)
-            cmd.extend(["--dates"] + [_date.strftime("%Y-%m-%d") for _date in dates])
-            cmd.extend(["--times"] + [_time.strftime("%H:%M") for _time in times])
-            cmd.extend(["--area", str(area)])
             if monthly:
-                cmd.extend(["--monthly"])
-            cmd.extend(["--out_file", out_file])
-            self.logger.info("Download: {}".format(cmd))
+                era_monthly = True
+            else:
+                era_monthly = False
 
-            proc = subprocess.run(cmd)
-            if not proc.returncode == 0:
-                raise RuntimeError("Download process returned unexpected non-zero exit code '{}'.".format(proc.returncode))
+            self.logger.info("Downloading ERA data for {} {} for {}".format(dates[0],dates[-1],area))
+            result = era_download.download_era5_reanalysis_data(dates=dates, times=times, variables=variables, area=str(area),
+                                          monthly=era_monthly, file_path=os.path.expanduser(out_file))
+
+            if result == 0:
+                raise RuntimeError("Download process returned unexpected non-zero exit code '{}'.".format(result))
 
         if not os.path.isfile(out_file):
             raise FileNotFoundError("Output file '{}' could not be located.".format(out_file))
@@ -334,10 +311,9 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         self.logger.debug(df.head())
 
         # Select requested time slice
-        sdate = r'{}-{}-{}'.format(self.args.start_date[0:4],self.args.start_date[4:6],self.args.start_date[6:8])
-        edate = r'{}-{}-{}'.format(self.args.end_date[0:4],self.args.end_date[4:6],self.args.end_date[6:8])
-        self.logger.debug("Filtering between {} and {}".format(sdate, edate))
-        df_filtered = df.loc[(df.index >= sdate) & (df.index <= edate)]
+        self.logger.debug("Filtering between {} and {}".format(self.args.start_date, self.args.end_date))
+        self.logger.debug("Index: {}".format(df.index[0]))
+        df_filtered = df.loc[(df.index >= self.args.start_date) & (df.index <= self.args.end_date)]
 
         # Convert date/time to string and then set this as the index
         df_filtered['StartDateTime'] = df_filtered.index.strftime('%Y-%m-%dT00:00:00')
@@ -368,7 +344,7 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         self.feature_collection = {"type": "FeatureCollection", "features": []}
 
         for i in df_filtered.index:
-            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [self.args.longitude, self.args.latitude]}, "properties": {}}
+            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(self.args.longitude), float(self.args.latitude)]}, "properties": {}}
 
             # Extract columns as properties
             property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
