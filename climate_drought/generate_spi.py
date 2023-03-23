@@ -85,10 +85,10 @@ class Era5ProcessingBase:
         # Setup area of interest extraction
         boxsz = 0.1
         area_box = []
-        area_box.append(self.args.latitude + boxsz)
-        area_box.append(self.args.longitude - boxsz)
-        area_box.append(self.args.latitude - boxsz)
-        area_box.append(self.args.longitude + boxsz)
+        area_box.append(float(self.args.latitude) + boxsz)
+        area_box.append(float(self.args.longitude) - boxsz)
+        area_box.append(float(self.args.latitude) - boxsz)
+        area_box.append(float(self.args.longitude) + boxsz)
 
         if self.args.accum:
             times = []
@@ -345,7 +345,7 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         self.feature_collection = {"type": "FeatureCollection", "features": []}
 
         for i in df_filtered.index:
-            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [self.args.longitude, self.args.latitude]}, "properties": {}}
+            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(self.args.longitude), float(self.args.latitude)]}, "properties": {}}
 
             # Extract columns as properties
             property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
