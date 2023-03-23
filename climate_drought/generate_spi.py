@@ -311,10 +311,9 @@ class Era5DailyPrecipProcessing(Era5ProcessingBase):
         self.logger.debug(df.head())
 
         # Select requested time slice
-        sdate = r'{}-{}-{}'.format(self.args.start_date[0:4],self.args.start_date[4:6],self.args.start_date[6:8])
-        edate = r'{}-{}-{}'.format(self.args.end_date[0:4],self.args.end_date[4:6],self.args.end_date[6:8])
-        self.logger.debug("Filtering between {} and {}".format(sdate, edate))
-        df_filtered = df.loc[(df.index >= sdate) & (df.index <= edate)]
+        self.logger.debug("Filtering between {} and {}".format(self.args.start_date, self.args.end_date))
+        self.logger.debug("Index: {}".format(df.index[0]))
+        df_filtered = df.loc[(df.index >= self.args.start_date) & (df.index <= self.args.end_date)]
 
         # Convert date/time to string and then set this as the index
         df_filtered['StartDateTime'] = df_filtered.index.strftime('%Y-%m-%dT00:00:00')
