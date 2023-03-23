@@ -1,6 +1,7 @@
 
 import argparse
 import datetime
+import glob
 import numpy as np
 import xarray as xr
 import streamlit as st
@@ -13,19 +14,28 @@ OUTPUT_DIR = 'output'
 FNAME = 'precip_20200101-20221231_52.5_1.25.nc'
 
 @st.cache(hash_funcs={xr.core.dataset.Dataset: id}, allow_output_mutation=True)
-def loadnc():
-    return xr.open_dataset(OUTPUT_DIR + '/' + FNAME)
-
-# Extract data from NetCDF file
-datxr = loadnc()
-resamp = datxr.tp.max(['latitude', 'longitude']).load()
-precip = resamp[:, 0]
+def loadnc(fname):
+    return xr.open_dataset(fname)
     
 with st.sidebar:
-    latitude=st.number_input(label='Latitude',value=50)
-    longitude=st.number_input(label='Longitude',value=1)
-    start_date=st.date_input(label='Start',value=datetime.date(2020,5,3))
-    end_date=st.date_input(label='End',value=datetime.date(2022,5,2))
+    fname = None
+    fname = st.selectbox('Select dataset',glob.glob(OUTPUT_DIR + '/*nc'))
+
+data = loadnc(fname)
+resamp = data.tp.max(['latitude', 'longitude']).load()
+precip = resamp[:, 0]
+
+if fname:
+    with st.sidebar:
+        st.header('Selected dataset: ')
+        latlon = fname.split('_')[2:]
+        latitude = latlon[0]
+        longitude = latlon[1].split('.nc')[0]
+        st.write('Latitude = ' + latitude)
+        st.write('Longitude = ' + longitude)
+
+        start_date=st.date_input(label='Start',value=datetime.date(2020,5,3))
+        end_date=st.date_input(label='End',value=datetime.date(2022,5,2))
 
 args = argparse.Namespace(
     accum = True,
@@ -58,14 +68,18 @@ df_filtered = df.loc[(df.index >= sdate) & (df.index <= edate)]
 # Remove any NaN values
 df_filtered = df_filtered[~df_filtered.isnull().any(axis=1)]
 
-#st.table(df_filtered)
-
 fig,ax = plt.subplots(2,1,figsize=(10,6))
 ax[0].plot(df_filtered.index,df_filtered.tp,label='Precipitation')
+ax[0].set_title('Total Precipitation')
 ax[1].plot(df_filtered.index,df_filtered.spi,label='SPI')
+ax[1].set_title('Standardized Precipitation Index')
 ax[0].grid()
 ax[1].grid()
 
+warning = df_filtered.spi < -1
+lims = ax[1].get_ylim()
+ax[1].fill_between(df_filtered.index, *[-4,4], where=warning, facecolor='red', alpha=.2)
+ax[1].set_ylim(lims)
 
 st.pyplot(fig)
 
