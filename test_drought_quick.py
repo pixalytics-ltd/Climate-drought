@@ -6,12 +6,15 @@ import numpy as np
 import xarray as xr
 import streamlit as st
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 # Links from Climate-drought repository
 from climate_drought import indices
 
 OUTPUT_DIR = 'output'
 FNAME = 'precip_20200101-20221231_52.5_1.25.nc'
+
+st.set_page_config(layout="wide")
 
 @st.cache(hash_funcs={xr.core.dataset.Dataset: id}, allow_output_mutation=True)
 def loadnc(fname):
@@ -68,20 +71,52 @@ df_filtered = df.loc[(df.index >= sdate) & (df.index <= edate)]
 # Remove any NaN values
 df_filtered = df_filtered[~df_filtered.isnull().any(axis=1)]
 
-fig,ax = plt.subplots(2,1,figsize=(10,6))
-ax[0].plot(df_filtered.index,df_filtered.tp,label='Precipitation')
-ax[0].set_title('Total Precipitation')
-ax[1].plot(df_filtered.index,df_filtered.spi,label='SPI')
-ax[1].set_title('Standardized Precipitation Index')
-ax[0].grid()
-ax[1].grid()
+latitude = float(latitude)
+longitude = float(longitude)
+
+boxsz = 0.1
+latmax=latitude + boxsz
+lonmin=longitude - boxsz
+latmin=latitude - boxsz
+lonmax=longitude + boxsz
+
+fig = go.Figure(go.Scattermapbox(
+    fill = "toself",
+    lon = [lonmin,lonmax,lonmax,lonmin], lat = [latmax,latmax,latmin,latmin],
+    marker = { 'size': 10, 'color': "orange" }))
+
+fig.update_layout(
+    width = 500,
+    height = 500,
+    margin=dict(l=0, r=20, t=20, b=20),
+    mapbox = {
+        'style': "stamen-terrain",
+        'center': {'lon': longitude, 'lat': latitude },
+        'zoom': 7},
+    showlegend = False)
+
+col1,col2 = st.columns(2)
+with col1:
+    st.plotly_chart(fig)
+
+fig1,ax = plt.subplots(figsize=(10,3))
+ax.plot(df_filtered.index,df_filtered.tp,label='Precipitation')
+ax.set_title('Total Precipitation')
+ax.grid()
+
+fig2,ax = plt.subplots(figsize=(10,3))
+ax.plot(df_filtered.index,df_filtered.spi,label='SPI')
+ax.set_title('Standardized Precipitation Index')
+ax.grid()
 
 warning = df_filtered.spi < -1
-lims = ax[1].get_ylim()
-ax[1].fill_between(df_filtered.index, *[-4,4], where=warning, facecolor='red', alpha=.2)
-ax[1].set_ylim(lims)
+lims = ax.get_ylim()
+ax.fill_between(df_filtered.index, *[-4,4], where=warning, facecolor='red', alpha=.2)
+ax.set_ylim(lims)
 
-st.pyplot(fig)
+with col2:
+    st.pyplot(fig1)
+    st.pyplot(fig2)
 
 
 
