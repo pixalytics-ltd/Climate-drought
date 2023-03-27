@@ -31,7 +31,7 @@ precip = resamp[:, 0]
 if fname:
     with st.sidebar:
         st.header('Selected dataset: ')
-        latlon = fname.split('_')[2:]
+        latlon = fname.split('_')[3:]
         latitude = latlon[0]
         longitude = latlon[1].split('.nc')[0]
         st.write('Latitude = ' + latitude)

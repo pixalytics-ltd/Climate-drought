@@ -9,7 +9,7 @@ from datetime import date, datetime
 import numpy as np
 
 # Links from Climate-drought repository
-from climate_drought import generate_spi
+from climate_drought import era5_processing
 from climate_drought import utils
 
 import logging
@@ -62,10 +62,9 @@ class DROUGHT:
         #try:
 
         # Need all times for accumulation
-        self.args.accum = True
+        self.args.accum = False
         self.working_dir = self.args.outdir
-        spi = generate_spi.Era5DailyPrecipProcessing(self.args, self.working_dir) \
-        if self.args.day is None else generate_spi.Era5DailyPrecipProcessing(self.args, self.working_dir)
+        spi = era5_processing.Era5PrecipProcessing(self.args, self.working_dir)
         output_file_path = spi.output_file_path
 
         if os.path.exists(output_file_path):
