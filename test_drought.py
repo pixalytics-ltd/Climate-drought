@@ -47,10 +47,9 @@ class DROUGHT:
         self.logger.debug("Computing SPI index for {sd} to {ed}.".format(sd=self.config.baseline_start, ed=self.config.baseline_end))
 
         exit_code = 0
-        # create era5 request object
-        req = config.ERA5Request(era.PRECIP_VARIABLES, True, 'precip', self.args, self.config, baseline=True)
+       
 
-        spi = era.Era5PrecipProcessing(req)
+        spi = era.SPI(self.config,self.args)
         output_file_path = spi.output_file_path
 
         if os.path.exists(output_file_path):
