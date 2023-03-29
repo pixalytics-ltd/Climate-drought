@@ -9,6 +9,7 @@ dependencies:
   - pip
   - python=3.8.16
   - xarray
+  - streamlit=1.8.1
   - pip:
     - cdsapi
     - geojson
