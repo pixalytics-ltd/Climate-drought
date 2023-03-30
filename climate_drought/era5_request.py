@@ -10,12 +10,19 @@ from pixutils import era_download
 # Logging
 logging.basicConfig(level=logging.DEBUG)
 
-# shared constants
+# Shared constants
 PRECIP_VARIABLES = ['total_precipitation']
 SOILWATER_VARIABLES = ["volumetric_soil_water_layer_1","volumetric_soil_water_layer_2","volumetric_soil_water_layer_3","volumetric_soil_water_layer_4"]
 
 class ERA5Request():
-    def __init__(self,variables,monthly,fname_out,args: config.AnalysisArgs,config: config.Config,baseline=False):
+    """
+    Object to constrain ERA5 download inputs.
+    Built inputs using analysis and config arguments.
+    Download can be either:
+    - baseline = True: a monthly mean over a long time perid to form the mean or baseline against which anomalies can be computed
+    - baseline = False: a monthly or hourly value to retreive data over shorter timescales
+    """
+    def __init__(self, variables, fname_out, args: config.AnalysisArgs, config: config.Config, baseline=False, monthly=True):
         self.latitude = args.latitude
         self.longitude = args.longitude
         self.start_date = config.baseline_start if baseline else args.start_date
@@ -24,7 +31,7 @@ class ERA5Request():
         self.working_dir = config.outdir
         self.fname_out = fname_out
         self.verbose = config.verbose
-        self.monthly = monthly
+        self.monthly = baseline or monthly
 
 class ERA5Download():
     """
