@@ -15,6 +15,7 @@ from pygeometa.core import read_mcf
 from pygeometa.schemas.ogcapi_records import OGCAPIRecordOutputSchema
 
 from abc import ABC, abstractclassmethod
+from typing import List
 
 # Logging
 logging.basicConfig(level=logging.DEBUG)
@@ -48,9 +49,10 @@ class DroughtIndex(ABC):
         return os.path.join(self.config.outdir, self.index_shortname + "_{d}.json".format(d=file_str))
 
     @abstractclassmethod
-    def download(self):
+    def download(self) -> List[str]:
         """
         Abstract method to ensure bespoke download procedure is used for each index
+        :return: list of netcdfs linking to downloaded files
         """
         pass
 
@@ -61,11 +63,25 @@ class DroughtIndex(ABC):
         """
         pass
 
-    def generate_geojson(self) -> None:
+    def generate_geojson(self, df_filtered) -> None:
         """
          Generates GeoJSON file for data
          :return: path to the geojson file
          """
+        # Build GeoJSON object
+        self.feature_collection = {"type": "FeatureCollection", "features": []}
+
+        for i in df_filtered.index:
+            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(self.args.longitude), float(self.args.latitude)]}, "properties": {}}
+
+            # Extract columns as properties
+            property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
+            parsed = json.loads(property)
+            print("Sam: ",parsed)
+            feature['properties'] = parsed
+
+            # Add feature
+            self.feature_collection['features'].append(feature)
         dump = geojson.dumps(self.feature_collection, indent=4)
         #self.logger.info("JSON: ",dump)
 
@@ -175,7 +191,9 @@ class SPI(DroughtIndex):
 
     def download(self):
         """
-        Download requried data from ERA5 portal using the imported ERA5 request module. The processing part of the SPI calculation requires that the long term dataset is passed in at the same time as the short term analysis period therefore we must request the whole baseline period for this analysis.
+        Download requried data from ERA5 portal using the imported ERA5 request module.
+        The processing part of the SPI calculation requires that the long term dataset is passed in at the same time as the short term analysis period therefore we must request the whole baseline period for this analysis.
+        :output: list containing name of single generated netcdf file. Must be a list as other indices will return the paths to multiple netcdfs for baseline and short-term timespans.
         """
          # create era5 request object
         req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True)
@@ -189,6 +207,8 @@ class SPI(DroughtIndex):
             downloaded_file = spi.download()
             self.logger.info("Downloading  for '{}' completed.".format(downloaded_file))
         self.downloaded_file = spi.download_file_path
+
+        return [downloaded_file]
 
     def convert_precip_to_spi(self) -> None:
         """
@@ -233,32 +253,14 @@ class SPI(DroughtIndex):
 
         # Convert date/time to string and then set this as the index
         df_filtered['StartDateTime'] = df_filtered.index.strftime('%Y-%m-%dT00:00:00')
-        #df_filtered = df_filtered.reset_index(drop=True)
-        #df_filtered = df_filtered.set_index('day')
-       #df_filtered = df_filtered.drop(['latitude'], axis=1)
-        #df_filtered = df_filtered.drop(['longitude'], axis=1)
+
         # Remove any NaN values
         df_filtered = df_filtered[~df_filtered.isnull().any(axis=1)]
         self.logger.debug("Updated DF: ")
         self.logger.debug(df_filtered.head())
 
-        # Build GeoJSON object
-        self.feature_collection = {"type": "FeatureCollection", "features": []}
-
-        for i in df_filtered.index:
-            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(self.args.longitude), float(self.args.latitude)]}, "properties": {}}
-
-            # Extract columns as properties
-            property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
-            parsed = json.loads(property)
-            print("Sam: ",parsed)
-            feature['properties'] = parsed
-
-            # Add feature
-            self.feature_collection['features'].append(feature)
-
-        # Generate output file
-        self.generate_geojson()
+        return df_filtered
+    
 
     def process(self) -> str:
         """
@@ -272,6 +274,67 @@ class SPI(DroughtIndex):
             raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.download_file_path))
         
         # Calculates SPI precipitation drought index
-        self.convert_precip_to_spi()
+        df_filtered = self.convert_precip_to_spi()
+        self.to_geojson(df_filtered)
 
-        return self.output_file_path
+        return self.df_filtered
+    
+class SoilMoisture(DroughtIndex):
+    """
+    Specialisation of the json base class for downloading and processing soil water data
+    """
+
+    def __init__(self, config: config.Config, args: config.AnalysisArgs):
+        """
+        Initializer.  Forwards parameters to super class.
+        :param args: program arguments
+        :param working_dir: directory that will hold all files generated by the class
+        """
+        super().__init__(config,args,index_shortname='sma')
+        self.logger.debug("Initiated ERA5 daily processing of soil water.")
+
+    
+    def download(self):
+        """
+        Download requried data from ERA5 portal using the imported ERA5 request module.
+        Download long term monthly data for the long term mean, and separately hourly data for short term period.
+        """
+        def exists_or_download(erad: erq.ERA5Download):
+            if os.path.exists(erad.download_file_path):
+                self.logger.info("Downloaded file '{}' already exists.".format(erad.download_file_path))
+            else:
+                downloaded_file = erad.download()
+                self.logger.info("Downloading  for '{}' completed.".format(downloaded_file))
+        
+        # create era5 request object for baseline
+        req_baseline = erq.ERA5Request(erq.SOILWATER_VARIABLES, 'soilwater', self.args, self.config, baseline=True)
+        dlf_baseline = erq.ERA5Download(req_baseline, self.logger)
+        exists_or_download(dlf_baseline)
+
+        # create era5 request object for short term period
+        self.args.accum = True
+        req_shorterm = erq.ERA5Request(erq.SOILWATER_VARIABLES, 'soilwater', self.args, self.config, baseline=False, monthly=False)
+        dlf_shorterm = erq.ERA5Download(req_shorterm, self.logger)
+        exists_or_download(dlf_shorterm)
+        
+        self.baseline_fname = dlf_baseline
+        self.shorterm_fname = dlf_shorterm
+
+        return [dlf_baseline, dlf_shorterm]
+
+    def process(self) -> str:
+        """
+        Carries out processing of the downloaded data.  This is the main functionality that is likely to differ between
+        each implementation.
+        :return: path to the output file generated by the algorithm
+        """
+        # self.logger.info("Initiating processing of ERA5 daily data.")
+
+        # if not os.path.isfile(self.download_file_path):
+        #     raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.download_file_path))
+
+        # # Calculates SPI precipitation drought index
+        # self.convert_precip_to_spi()
+
+        # return self.output_file_path
+        print('Not implemented')

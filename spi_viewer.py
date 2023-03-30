@@ -11,14 +11,12 @@ import plotly.graph_objects as go
 # Links from Climate-drought repository
 from climate_drought import indices
 
-"""
-Script to generate a web app to view and interact with Index input and output data.
-To run:
-- change 'OUTPUT_DIR' to location of netcdf files
-- in the command line, activate climate-env
-- enter 'streamlit run index_viewer.py'
-The web app will start up in a window in your browser.
-"""
+# Script to generate a web app to view and interact with Index input and output data.
+# To run:
+# - change 'OUTPUT_DIR' to location of netcdf files
+# - in the command line, activate climate-env
+# - enter 'streamlit run index_viewer.py'
+# The web app will start up in a window in your browser.
 
 OUTPUT_DIR = 'output'
 
@@ -30,7 +28,7 @@ def loadnc(fname):
     
 with st.sidebar:
     fname = None
-    fname = st.selectbox('Select dataset',glob.glob(OUTPUT_DIR + '/*nc'))
+    fname = st.selectbox('Select dataset',glob.glob(OUTPUT_DIR + '/precip*.nc'))
 
 if fname:
     data = loadnc(fname)
