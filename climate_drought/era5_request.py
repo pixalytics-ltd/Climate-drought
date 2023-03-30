@@ -86,10 +86,10 @@ class ERA5Download():
         # Setup area of interest extraction
         boxsz = 0.1
         area_box = []
-        area_box.append(float(self.args.latitude) + boxsz)
-        area_box.append(float(self.args.longitude) - boxsz)
-        area_box.append(float(self.args.latitude) - boxsz)
-        area_box.append(float(self.args.longitude) + boxsz)
+        area_box.append(float(self.req.latitude) + boxsz)
+        area_box.append(float(self.req.longitude) - boxsz)
+        area_box.append(float(self.req.latitude) - boxsz)
+        area_box.append(float(self.req.longitude) + boxsz)
 
         if not self.req.monthly:
             times = []

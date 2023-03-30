@@ -178,7 +178,7 @@ class SPI(DroughtIndex):
         Download requried data from ERA5 portal using the imported ERA5 request module. The processing part of the SPI calculation requires that the long term dataset is passed in at the same time as the short term analysis period therefore we must request the whole baseline period for this analysis.
         """
          # create era5 request object
-        req = erq.ERA5Request(erq.PRECIP_VARIABLES, True, 'precip', self.args, self.config, baseline=True)
+        req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True)
 
         # submit the request to the era5 API via our ERA5 request module
         spi = erq.ERA5Download(req,self.logger)
