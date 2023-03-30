@@ -14,6 +14,7 @@ from climate_drought import indices
 """
 Script to generate a web app to view and interact with Index input and output data.
 To run:
+- change 'OUTPUT_DIR' to location of netcdf files
 - in the command line, activate climate-env
 - enter 'streamlit run index_viewer.py'
 The web app will start up in a window in your browser.
