@@ -19,20 +19,17 @@ class INDICES:
     FITTED_INDEX_VALID_MAX = 3.09
 
     # SPI Variables
-    Start_year = 1985
+    Start_year = 1985 #TODO JC Make same as inputs, specify in config?
     Calib_year_initial = 1900
     Calib_year_final = 2000
     Scale_months = 3
 
-    def __init__(self, args):
-
-        # Transfer args
-        self.args = args
+    def __init__(self, verbose=True):
 
         # Setup logging
         self.logger = logging.getLogger("drought_indices")
         self.logger.setLevel(
-            logging.DEBUG if args.verbose else logging.INFO
+            logging.DEBUG if verbose else logging.INFO
         )
 
         self.logger.info("\n")
