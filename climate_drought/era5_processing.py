@@ -1,7 +1,7 @@
 import logging
 import os
 import numpy as np
-import xarray
+import xarray as xr
 import json
 import geojson
 
@@ -184,8 +184,11 @@ class SPI(DroughtIndex):
         # precipitation download must return a baseline time series because this is a requirement of the outsourced spi calculation algorithm
         super().__init__(config, args, 'spi')
         
-        # initialise downloaded file path to None and update once the 'download' method is run
-        self.downloaded_file = None
+        # create era5 request object
+        req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True)
+
+        # initialise the download object using the request, but don't download yet
+        self.spi_download = erq.ERA5Download(req,self.logger)
 
         self.logger.debug("Initiated ERA5 daily processing of temperature strategy.")
 
@@ -195,20 +198,14 @@ class SPI(DroughtIndex):
         The processing part of the SPI calculation requires that the long term dataset is passed in at the same time as the short term analysis period therefore we must request the whole baseline period for this analysis.
         :output: list containing name of single generated netcdf file. Must be a list as other indices will return the paths to multiple netcdfs for baseline and short-term timespans.
         """
-         # create era5 request object
-        req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True)
 
-        # submit the request to the era5 API via our ERA5 request module
-        spi = erq.ERA5Download(req,self.logger)
-
-        if os.path.exists(spi.download_file_path):
-            self.logger.info("Downloaded file '{}' already exists.".format(spi.download_file_path))
+        if os.path.exists(self.spi_download.download_file_path):
+            self.logger.info("Downloaded file '{}' already exists.".format(self.spi_download.download_file_path))
         else:
-            downloaded_file = spi.download()
+            downloaded_file = self.spi_download.download()
             self.logger.info("Downloading  for '{}' completed.".format(downloaded_file))
-        self.downloaded_file = spi.download_file_path
 
-        return [downloaded_file]
+        return [self.spi_download.download_file_path]
 
     def convert_precip_to_spi(self) -> None:
         """
@@ -219,16 +216,17 @@ class SPI(DroughtIndex):
         """
 
         # Extract data from NetCDF file
-        datxr = xarray.open_dataset(self.downloaded_file)
+        datxr = xr.open_dataset(self.spi_download.download_file_path)
         self.logger.debug("Xarray:")
         self.logger.debug(datxr)
 
         # Convert to monthly sums and extract max of the available cells
         # group('time.month') is 1 to 12 while resamp is monthly data
-        if not self.args.accum:
-            resamp = datxr.tp.max(['latitude', 'longitude']).load()
-        else:
-            resamp = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
+        #if not self.args.accum:
+        # TODO JC reinstate this for SPI but at the moment we're just using monthly data so accum will never be true
+        resamp = datxr.tp.max(['latitude', 'longitude']).load()
+        #else:
+        #resamp = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
         precip = resamp[:, 0]
 
         self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(precip.values), np.nanmin(precip.values), np.nanmax(precip.values)))
@@ -270,14 +268,14 @@ class SPI(DroughtIndex):
         """
         self.logger.info("Initiating processing of ERA5 daily data.")
 
-        if not os.path.isfile(self.downloaded_file):
-            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.download_file_path))
+        if not os.path.isfile(self.spi_download.download_file_path):
+            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.spi_download.download_file_path))
         
         # Calculates SPI precipitation drought index
         df_filtered = self.convert_precip_to_spi()
-        self.to_geojson(df_filtered)
+        self.generate_geojson(df_filtered)
 
-        return self.df_filtered
+        return df_filtered
     
 class SoilMoisture(DroughtIndex):
     """
@@ -292,7 +290,14 @@ class SoilMoisture(DroughtIndex):
         """
         super().__init__(config,args,index_shortname='sma')
         self.logger.debug("Initiated ERA5 daily processing of soil water.")
+        
+        # initialise download objects
+        req_baseline = erq.ERA5Request(erq.SOILWATER_VARIABLES, 'soilwater', self.args, self.config, baseline=True)
+        self.swv_monthly_download = erq.ERA5Download(req_baseline, self.logger)
 
+        # create era5 request object for short term period
+        req_shorterm = erq.ERA5Request(erq.SOILWATER_VARIABLES, 'soilwater', self.args, self.config, baseline=False, monthly=False)
+        self.swv_hourly_download = erq.ERA5Download(req_shorterm, self.logger)
     
     def download(self):
         """
@@ -306,21 +311,11 @@ class SoilMoisture(DroughtIndex):
                 downloaded_file = erad.download()
                 self.logger.info("Downloading  for '{}' completed.".format(downloaded_file))
         
-        # create era5 request object for baseline
-        req_baseline = erq.ERA5Request(erq.SOILWATER_VARIABLES, 'soilwater', self.args, self.config, baseline=True)
-        dlf_baseline = erq.ERA5Download(req_baseline, self.logger)
-        exists_or_download(dlf_baseline)
+        # download baseline and monthly data
+        exists_or_download(self.swv_monthly_download)
+        exists_or_download(self.swv_monthly_download)
 
-        # create era5 request object for short term period
-        self.args.accum = True
-        req_shorterm = erq.ERA5Request(erq.SOILWATER_VARIABLES, 'soilwater', self.args, self.config, baseline=False, monthly=False)
-        dlf_shorterm = erq.ERA5Download(req_shorterm, self.logger)
-        exists_or_download(dlf_shorterm)
-        
-        self.baseline_fname = dlf_baseline
-        self.shorterm_fname = dlf_shorterm
-
-        return [dlf_baseline, dlf_shorterm]
+        return [self.swv_monthly_download.download_file_path, self.swv_hourly_download.download_file_path]
 
     def process(self) -> str:
         """
@@ -328,13 +323,34 @@ class SoilMoisture(DroughtIndex):
         each implementation.
         :return: path to the output file generated by the algorithm
         """
-        # self.logger.info("Initiating processing of ERA5 daily data.")
+        self.logger.info("Initiating processing of ERA5 soil water data.")
 
-        # if not os.path.isfile(self.download_file_path):
-        #     raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.download_file_path))
+        if not os.path.isfile(self.swv_monthly_download.download_file_path):
+            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.swv_monthly_download.download_file_path))
+        if not os.path.isfile(self.swv_hourly_download.download_file_path):
+            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.swv_hourly_download.download_file_path))
 
-        # # Calculates SPI precipitation drought index
-        # self.convert_precip_to_spi()
+        # Open netcdfs
+        monthly_swv = xr.open_dataset(self.swv_monthly_download.download_file_path)
+        hourly_swv = xr.open_dataset(self.swv_hourly_download.download_file_path).squeeze()
 
-        # return self.output_file_path
-        print('Not implemented')
+        # Reduce monthly data to what's relevant
+        monthly_swv = monthly_swv.isel(expver=0).drop_vars('expver').mean(('latitude','longitude'))
+        swv_mean = monthly_swv.mean('time')
+        swv_std = monthly_swv.std('time')
+
+        # Resmple hourly data to daily
+        #print(self.swv_hourly_download.download_file_path)
+        #daily_swv = hourly_swv.squeeze().resample(time='D').mean()
+        daily_swv = hourly_swv.drop_vars(['latitude','longitude']).to_dataframe().resample('D').mean().to_xarray()
+        
+        # Calculate zscores
+        swv_zscores = ((daily_swv - swv_mean) / swv_std).rename({'swvl1': 'swvl1_zscore','swvl2': 'swvl2_zscore','swvl3': 'swvl3_zscore','swvl4': 'swvl4_zscore'})
+
+        # Create dataframe
+        df = xr.merge([daily_swv,swv_zscores]).to_dataframe()
+
+        self.logger.info("Completed processing of ERA5 soil water data.")
+
+
+        return df
