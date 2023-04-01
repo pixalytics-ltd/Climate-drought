@@ -13,7 +13,6 @@ dependencies:
   - plotly
   - pip:
     - cdsapi
-    - covjson-pydantic
     - geojson
     - netcdf4
     - numba

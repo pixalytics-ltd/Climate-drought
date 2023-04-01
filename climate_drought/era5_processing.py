@@ -90,7 +90,7 @@ class DroughtIndex(ABC):
          :return: path to the json file
          """
 
-        json_x = self.feature_collection.json(exclude_none=True)#, indent=True)
+        json_x = self.feature_collection.json(exclude_none=True, indent=True)
         f = open(self.output_file_path, "w", encoding='utf-8')
         f.write(json_x)
 
@@ -270,12 +270,12 @@ class SPI(DroughtIndex):
 
             # Extract dates and values
             dates = df_filtered.index.values
-            spi_name = "SPI"
             precip_name = "Precipitation"
             precip_vals = np.array(precip.values).flatten()
             pvals = []
             for val in precip_vals:
                 pvals.append(float(val))
+            spi_name = "SPI"
             svals = []
             for val in spi_vals:
                 svals.append(float(val))
