@@ -9,8 +9,7 @@ from datetime import date, datetime
 import numpy as np
 
 # Links from Climate-drought repository
-from climate_drought import generate_spi
-from climate_drought import utils
+from climate_drought import era5_processing as era, config
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -28,22 +27,11 @@ class DROUGHT:
     Requirements:
     """
 
-    def __init__(self, args):
+    def __init__(self,args):
 
         # Transfer args
-        self.args = args
-        self.working_dir = self.args.outdir
-
-        # Create list of dates between max start and end dates
-        dates = utils.daterange(Sdate, Edate, 0)
-        date_list = []
-        for i,indate in enumerate(dates):
-            self.args.year = int(indate[0:4])
-            self.args.month = int(indate[4:6])
-            self.args.day = int(indate[6:8])
-            date_list.append(date(self.args.year, self.args.month, self.args.day))
-        self.args.dates = date_list
-
+        self.config = config.Config(args.outdir,args.verbose)
+        self.args = config.AnalysisArgs(args)
 
         # Setup logging
         self.logger = logging.getLogger("test_drought")
@@ -54,18 +42,14 @@ class DROUGHT:
         self.logger.info("\n")
 
 
-    def run_drought(self):
+    def run_spi(self):
 
-        self.logger.debug("Computing SPI index for {sd} to {ed}.".format(sd=self.args.start_date, ed=self.args.end_date))
+        self.logger.debug("Computing SPI index for {sd} to {ed}.".format(sd=self.config.baseline_start, ed=self.config.baseline_end))
 
         exit_code = 0
-        #try:
+       
 
-        # Need all times for accumulation
-        self.args.accum = True
-        self.working_dir = self.args.outdir
-        spi = generate_spi.Era5DailyPrecipProcessing(self.args, self.working_dir) \
-        if self.args.day is None else generate_spi.Era5DailyPrecipProcessing(self.args, self.working_dir)
+        spi = era.SPI(self.config,self.args)
         output_file_path = spi.output_file_path
 
         if os.path.exists(output_file_path):
@@ -123,7 +107,7 @@ def main():
 
     print("Args: {}".format(args))
     drought = DROUGHT(args)
-    result = drought.run_drought()
+    result = drought.run_spi()
 
 
 if __name__ == "__main__":

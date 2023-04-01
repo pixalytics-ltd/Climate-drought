@@ -9,6 +9,7 @@ Install conda environment using the Anaconda Prompt:
 - Use pip to install the main branch of the climate indices repository: `pip install -e git+https://github.com/monocongo/climate_indices.git@master#egg=climate_indices`
 - Use pip to install the feature/20 branch of the pixutils repository: `pip install -e git+https://github.com/pixalytics-ltd/pixutils.git@feature/20#egg=pixutils`
 
+Note: if the climate indices or pixutils respositories needs to be edited locally, then clone them and when inside the repository, with the conda environment activated, run: `python setup.py develop`
 
 ## Testing climate indices
 
