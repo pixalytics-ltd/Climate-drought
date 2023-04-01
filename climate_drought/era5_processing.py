@@ -6,9 +6,12 @@ import xarray
 # JSON export
 import json
 import geojson
-from covjson_pydantic.coge import Coverage
+import orjson
+from covjson_pydantic.reference_system import ReferenceSystem
 from covjson_pydantic.domain import Domain
 from covjson_pydantic.ndarray import NdArray
+from covjson_pydantic.coverage import Coverage
+from covjson_pydantic.parameter import Parameter, ParameterGroup
 
 # Drought indices calculator
 from climate_drought import indices, config, era5_request as erq
@@ -84,11 +87,16 @@ class DroughtIndex(ABC):
     def generate_covjson(self) -> None:
         """
          Generates CoverageJSON file for data
-         :return: path to the geojson file
+         :return: path to the json file
          """
 
-        with open(self.output_file_path, "w", encoding='utf-8') as outfile:
-            geojson.dump(json_x, outfile, indent=4)
+        json_x = self.feature_collection.json(exclude_none=True)#, indent=True)
+        f = open(self.output_file_path, "w", encoding='utf-8')
+        f.write(json_x)
+
+        #with open(self.output_file_path, "w", encoding='utf-8') as outfile:
+        #    orjson.dumps(self.feature_collection, option= orjson.OPT_NON_STR_KEYS | orjson.OPT_INDENT_2 | orjson.OPT_NAIVE_UTC | orjson.OPT_SERIALIZE_NUMPY).decode()
+
 
     def generate_record(self) -> None:
         """
@@ -261,7 +269,16 @@ class SPI(DroughtIndex):
         if covjson: # Generate CoverageJSON
 
             # Extract dates and values
-            dates = df_filtered.StartDateTime.values
+            dates = df_filtered.index.values
+            spi_name = "SPI"
+            precip_name = "Precipitation"
+            precip_vals = np.array(precip.values).flatten()
+            pvals = []
+            for val in precip_vals:
+                pvals.append(float(val))
+            svals = []
+            for val in spi_vals:
+                svals.append(float(val))
             num_vals = len(spi_vals)
 
             # Create Structure
@@ -271,13 +288,50 @@ class SPI(DroughtIndex):
                     axes={
                         "x": {"dataType": "float", "values": [self.args.longitude]},
                         "y": {"values": [self.args.latitude]},
-                        "t": {"dataType": "datetime", "values": xx}
+                        "t": {"dataType": "datetime", "values": list(dates)}
                     },
                 ),
+                referencing=ReferenceSystem(coordinates=["x","y"], type="GeographicCRS"),
+                parameters={
+                    precip_name: Parameter(
+                        type="Parameter",
+                        description={
+                            "en": "Total Precipitation"
+                        },
+                        unit={
+                            "symbol": "m"
+                        },
+                        observedProperty={
+                            "id": "https://vocab.nerc.ac.uk/standard_name/precipitation_amount/",
+                            "label": {
+                                "en": "Precipition_amount"
+                            }
+                        }
+                    ),
+                    spi_name: Parameter(
+                        type="Parameter",
+                        description={
+                            "en": "Standard Precipitation Index"
+                        },
+                        unit={
+                            "symbol": "unitless"
+                        },
+                        observedProperty={
+                            "id": "https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi",
+                            "label": {
+                                "en": "Standard Precipitation Index"
+                            }
+                        }
+                    ),
+                },
                 ranges={
-                    "temperature": NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=spi_vals)
+                    precip_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
+                    spi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals)
                 }
             )
+
+            # Generate output file
+            self.generate_covjson()
 
         else: # Generate GeoJSON
             # Build GeoJSON object
