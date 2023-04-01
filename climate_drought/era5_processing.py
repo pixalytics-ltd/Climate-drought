@@ -2,9 +2,15 @@ import logging
 import os
 import numpy as np
 import xarray
+
+# JSON export
 import json
 import geojson
+from covjson_pydantic.coge import Coverage
+from covjson_pydantic.domain import Domain
+from covjson_pydantic.ndarray import NdArray
 
+# Drought indices calculator
 from climate_drought import indices, config, era5_request as erq
 
 # pygeometa for OGC API record creation
@@ -71,6 +77,15 @@ class DroughtIndex(ABC):
 
         # Reload to check formatting
         json_x = geojson.loads(dump)
+
+        with open(self.output_file_path, "w", encoding='utf-8') as outfile:
+            geojson.dump(json_x, outfile, indent=4)
+
+    def generate_covjson(self) -> None:
+        """
+         Generates CoverageJSON file for data
+         :return: path to the geojson file
+         """
 
         with open(self.output_file_path, "w", encoding='utf-8') as outfile:
             geojson.dump(json_x, outfile, indent=4)
@@ -242,23 +257,46 @@ class SPI(DroughtIndex):
         self.logger.debug("Updated DF: ")
         self.logger.debug(df_filtered.head())
 
-        # Build GeoJSON object
-        self.feature_collection = {"type": "FeatureCollection", "features": []}
+        covjson = True
+        if covjson: # Generate CoverageJSON
 
-        for i in df_filtered.index:
-            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(self.args.longitude), float(self.args.latitude)]}, "properties": {}}
+            # Extract dates and values
+            dates = df_filtered.StartDateTime.values
+            num_vals = len(spi_vals)
 
-            # Extract columns as properties
-            property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
-            parsed = json.loads(property)
-            print("Sam: ",parsed)
-            feature['properties'] = parsed
+            # Create Structure
+            self.feature_collection = Coverage(
+                domain=Domain(
+                    domainType="PointSeries",
+                    axes={
+                        "x": {"dataType": "float", "values": [self.args.longitude]},
+                        "y": {"values": [self.args.latitude]},
+                        "t": {"dataType": "datetime", "values": xx}
+                    },
+                ),
+                ranges={
+                    "temperature": NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=spi_vals)
+                }
+            )
 
-            # Add feature
-            self.feature_collection['features'].append(feature)
+        else: # Generate GeoJSON
+            # Build GeoJSON object
+            self.feature_collection = {"type": "FeatureCollection", "features": []}
 
-        # Generate output file
-        self.generate_geojson()
+            for i in df_filtered.index:
+                feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(self.args.longitude), float(self.args.latitude)]}, "properties": {}}
+
+                # Extract columns as properties
+                property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
+                parsed = json.loads(property)
+                print("Sam: ",parsed)
+                feature['properties'] = parsed
+
+                # Add feature
+                self.feature_collection['features'].append(feature)
+
+            # Generate output file
+            self.generate_geojson()
 
     def process(self) -> str:
         """
