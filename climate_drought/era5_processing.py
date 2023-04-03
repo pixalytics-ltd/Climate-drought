@@ -1,11 +1,11 @@
 import logging
 import os
 import numpy as np
-import xarray
+import xarray as xr
 import json
 import geojson
 
-from climate_drought import indices, config, era5_request as erq
+from climate_drought import indices, config, utils, era5_request as erq
 
 # pygeometa for OGC API record creation
 import yaml
@@ -15,6 +15,7 @@ from pygeometa.core import read_mcf
 from pygeometa.schemas.ogcapi_records import OGCAPIRecordOutputSchema
 
 from abc import ABC, abstractclassmethod
+from typing import List
 
 # Logging
 logging.basicConfig(level=logging.DEBUG)
@@ -48,9 +49,10 @@ class DroughtIndex(ABC):
         return os.path.join(self.config.outdir, self.index_shortname + "_{d}.json".format(d=file_str))
 
     @abstractclassmethod
-    def download(self):
+    def download(self) -> List[str]:
         """
         Abstract method to ensure bespoke download procedure is used for each index
+        :return: list of netcdfs linking to downloaded files
         """
         pass
 
@@ -61,11 +63,25 @@ class DroughtIndex(ABC):
         """
         pass
 
-    def generate_geojson(self) -> None:
+    def generate_geojson(self, df_filtered) -> None:
         """
          Generates GeoJSON file for data
          :return: path to the geojson file
          """
+        # Build GeoJSON object
+        self.feature_collection = {"type": "FeatureCollection", "features": []}
+
+        for i in df_filtered.index:
+            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(self.args.longitude), float(self.args.latitude)]}, "properties": {}}
+
+            # Extract columns as properties
+            property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
+            parsed = json.loads(property)
+            print("Sam: ",parsed)
+            feature['properties'] = parsed
+
+            # Add feature
+            self.feature_collection['features'].append(feature)
         dump = geojson.dumps(self.feature_collection, indent=4)
         #self.logger.info("JSON: ",dump)
 
@@ -168,27 +184,28 @@ class SPI(DroughtIndex):
         # precipitation download must return a baseline time series because this is a requirement of the outsourced spi calculation algorithm
         super().__init__(config, args, 'spi')
         
-        # initialise downloaded file path to None and update once the 'download' method is run
-        self.downloaded_file = None
+        # create era5 request object
+        req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True)
+
+        # initialise the download object using the request, but don't download yet
+        self.spi_download = erq.ERA5Download(req,self.logger)
 
         self.logger.debug("Initiated ERA5 daily processing of temperature strategy.")
 
     def download(self):
         """
-        Download requried data from ERA5 portal using the imported ERA5 request module. The processing part of the SPI calculation requires that the long term dataset is passed in at the same time as the short term analysis period therefore we must request the whole baseline period for this analysis.
+        Download requried data from ERA5 portal using the imported ERA5 request module.
+        The processing part of the SPI calculation requires that the long term dataset is passed in at the same time as the short term analysis period therefore we must request the whole baseline period for this analysis.
+        :output: list containing name of single generated netcdf file. Must be a list as other indices will return the paths to multiple netcdfs for baseline and short-term timespans.
         """
-         # create era5 request object
-        req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True)
 
-        # submit the request to the era5 API via our ERA5 request module
-        spi = erq.ERA5Download(req,self.logger)
-
-        if os.path.exists(spi.download_file_path):
-            self.logger.info("Downloaded file '{}' already exists.".format(spi.download_file_path))
+        if os.path.exists(self.spi_download.download_file_path):
+            self.logger.info("Downloaded file '{}' already exists.".format(self.spi_download.download_file_path))
         else:
-            downloaded_file = spi.download()
+            downloaded_file = self.spi_download.download()
             self.logger.info("Downloading  for '{}' completed.".format(downloaded_file))
-        self.downloaded_file = spi.download_file_path
+
+        return [self.spi_download.download_file_path]
 
     def convert_precip_to_spi(self) -> None:
         """
@@ -199,16 +216,17 @@ class SPI(DroughtIndex):
         """
 
         # Extract data from NetCDF file
-        datxr = xarray.open_dataset(self.downloaded_file)
+        datxr = xr.open_dataset(self.spi_download.download_file_path)
         self.logger.debug("Xarray:")
         self.logger.debug(datxr)
 
         # Convert to monthly sums and extract max of the available cells
         # group('time.month') is 1 to 12 while resamp is monthly data
-        if not self.args.accum:
-            resamp = datxr.tp.max(['latitude', 'longitude']).load()
-        else:
-            resamp = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
+        #if not self.args.accum:
+        # TODO JC reinstate this for SPI but at the moment we're just using monthly data so accum will never be true
+        resamp = datxr.tp.max(['latitude', 'longitude']).load()
+        #else:
+        #resamp = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
         precip = resamp[:, 0]
 
         self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(precip.values), np.nanmin(precip.values), np.nanmax(precip.values)))
@@ -233,32 +251,14 @@ class SPI(DroughtIndex):
 
         # Convert date/time to string and then set this as the index
         df_filtered['StartDateTime'] = df_filtered.index.strftime('%Y-%m-%dT00:00:00')
-        #df_filtered = df_filtered.reset_index(drop=True)
-        #df_filtered = df_filtered.set_index('day')
-       #df_filtered = df_filtered.drop(['latitude'], axis=1)
-        #df_filtered = df_filtered.drop(['longitude'], axis=1)
+
         # Remove any NaN values
         df_filtered = df_filtered[~df_filtered.isnull().any(axis=1)]
         self.logger.debug("Updated DF: ")
         self.logger.debug(df_filtered.head())
 
-        # Build GeoJSON object
-        self.feature_collection = {"type": "FeatureCollection", "features": []}
-
-        for i in df_filtered.index:
-            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(self.args.longitude), float(self.args.latitude)]}, "properties": {}}
-
-            # Extract columns as properties
-            property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
-            parsed = json.loads(property)
-            print("Sam: ",parsed)
-            feature['properties'] = parsed
-
-            # Add feature
-            self.feature_collection['features'].append(feature)
-
-        # Generate output file
-        self.generate_geojson()
+        return df_filtered
+    
 
     def process(self) -> str:
         """
@@ -268,10 +268,89 @@ class SPI(DroughtIndex):
         """
         self.logger.info("Initiating processing of ERA5 daily data.")
 
-        if not os.path.isfile(self.downloaded_file):
-            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.download_file_path))
+        if not os.path.isfile(self.spi_download.download_file_path):
+            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.spi_download.download_file_path))
         
         # Calculates SPI precipitation drought index
-        self.convert_precip_to_spi()
+        df_filtered = self.convert_precip_to_spi()
+        self.generate_geojson(df_filtered)
 
-        return self.output_file_path
+        return df_filtered
+    
+class SoilMoisture(DroughtIndex):
+    """
+    Specialisation of the json base class for downloading and processing soil water data
+    """
+
+    def __init__(self, config: config.Config, args: config.AnalysisArgs):
+        """
+        Initializer.  Forwards parameters to super class.
+        :param args: program arguments
+        :param working_dir: directory that will hold all files generated by the class
+        """
+        super().__init__(config,args,index_shortname='sma')
+        self.logger.debug("Initiated ERA5 daily processing of soil water.")
+        
+        # initialise download objects
+        req_baseline = erq.ERA5Request(erq.SOILWATER_VARIABLES, 'soilwater', self.args, self.config, baseline=True)
+        self.swv_monthly_download = erq.ERA5Download(req_baseline, self.logger)
+
+        # create era5 request object for short term period
+        req_shorterm = erq.ERA5Request(erq.SOILWATER_VARIABLES, 'soilwater', self.args, self.config, baseline=False, monthly=False)
+        self.swv_hourly_download = erq.ERA5Download(req_shorterm, self.logger)
+    
+    def download(self):
+        """
+        Download requried data from ERA5 portal using the imported ERA5 request module.
+        Download long term monthly data for the long term mean, and separately hourly data for short term period.
+        """
+        def exists_or_download(erad: erq.ERA5Download):
+            if os.path.exists(erad.download_file_path):
+                self.logger.info("Downloaded file '{}' already exists.".format(erad.download_file_path))
+            else:
+                downloaded_file = erad.download()
+                self.logger.info("Downloading  for '{}' completed.".format(downloaded_file))
+        
+        # download baseline and monthly data
+        exists_or_download(self.swv_monthly_download)
+        exists_or_download(self.swv_monthly_download)
+
+        return [self.swv_monthly_download.download_file_path, self.swv_hourly_download.download_file_path]
+
+    def process(self) -> str:
+        """
+        Carries out processing of the downloaded data.  This is the main functionality that is likely to differ between
+        each implementation.
+        :return: path to the output file generated by the algorithm
+        """
+        self.logger.info("Initiating processing of ERA5 soil water data.")
+
+        if not os.path.isfile(self.swv_monthly_download.download_file_path):
+            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.swv_monthly_download.download_file_path))
+        if not os.path.isfile(self.swv_hourly_download.download_file_path):
+            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.swv_hourly_download.download_file_path))
+
+        # Open netcdfs
+        monthly_swv = xr.open_dataset(self.swv_monthly_download.download_file_path)
+        hourly_swv = xr.open_dataset(self.swv_hourly_download.download_file_path).squeeze()
+
+        # Reduce monthly data to what's relevant
+        monthly_swv = monthly_swv.isel(expver=0).drop_vars('expver').mean(('latitude','longitude'))
+        swv_mean = monthly_swv.mean('time')
+        swv_std = monthly_swv.std('time')
+
+        # Resmple hourly data to dekafs
+        hourly_swv = hourly_swv.drop_vars(['latitude','longitude']).to_dataframe()
+        swv_dekads = utils.to_dekads(hourly_swv)
+        
+        # Calculate zscores
+        for layer in [1,2,3,4]:
+            col = 'swvl' + str(layer)
+            swv_dekads['zscore_' + col] = ((swv_dekads[col] - swv_mean[col].item()) / swv_std[col].item())
+
+        # Output to JSON
+        self.generate_geojson(swv_dekads)
+
+        self.logger.info("Completed processing of ERA5 soil water data.")
+
+        return swv_dekads

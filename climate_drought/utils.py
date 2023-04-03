@@ -2,6 +2,7 @@
 import datetime
 import pandas as pd
 import argparse
+import numpy as np
 
 
 def daterange(sdate, edate, rtv):
@@ -37,6 +38,11 @@ def daterange(sdate, edate, rtv):
                 y = t[0:4] + str(tt[7])
         dates.append(y)
     return dates
+
+def to_dekads(df):
+    d = df.index.day - np.clip((df.index.day-1) // 10, 0, 2)*10 - 1
+    date = df.index.values - np.array(d, dtype="timedelta64[D]")
+    return df.groupby(date).mean()
 
 class setup_args:
     working_dir = '/data/webservice/CLIMATE'
