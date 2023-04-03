@@ -32,7 +32,7 @@ class DROUGHT:
 
         # Transfer args
         self.config = config.Config(args.outdir,args.verbose)
-        self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date,args.product,args.accum)
+        self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date,args.product)
 
         # Setup logging
         self.logger = logging.getLogger("test_drought")
