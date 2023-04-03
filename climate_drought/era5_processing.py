@@ -5,7 +5,7 @@ import xarray as xr
 import json
 import geojson
 
-from climate_drought import indices, config, era5_request as erq
+from climate_drought import indices, config, utils, era5_request as erq
 
 # pygeometa for OGC API record creation
 import yaml
@@ -339,21 +339,19 @@ class SoilMoisture(DroughtIndex):
         swv_mean = monthly_swv.mean('time')
         swv_std = monthly_swv.std('time')
 
-        # Resmple hourly data to daily
-        #print(self.swv_hourly_download.download_file_path)
-        #daily_swv = hourly_swv.squeeze().resample(time='D').mean()
-        daily_swv = hourly_swv.drop_vars(['latitude','longitude']).to_dataframe().resample('D').mean().to_xarray()
+        # Resmple hourly data to dekafs
+        hourly_swv = hourly_swv.drop_vars(['latitude','longitude']).to_dataframe()
+        swv_dekads = utils.to_dekads(hourly_swv)
         
         # Calculate zscores
-        swv_zscores = ((daily_swv - swv_mean) / swv_std).rename({'swvl1': 'swvl1_zscore','swvl2': 'swvl2_zscore','swvl3': 'swvl3_zscore','swvl4': 'swvl4_zscore'})
-
-        # Create dataframe
-        df = xr.merge([daily_swv,swv_zscores]).to_dataframe()
+        for layer in [1,2,3,4]:
+            col = 'swvl' + str(layer)
+            swv_dekads['zscore_' + col] = ((swv_dekads[col] - swv_mean[col].item()) / swv_std[col].item())
 
         # Output to JSON
-        self.generate_geojson(df)
+        self.generate_geojson(swv_dekads)
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
 
-        return df
+        return swv_dekads

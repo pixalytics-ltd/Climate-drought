@@ -116,7 +116,7 @@ ax.grid()
 ax.legend()
 
 
-warning = df_sma['swvl{}_zscore'.format(sma_level)] < -1
+warning = df_sma['zscore_swvl{}'.format(sma_level)] < -1
 lims = ax.get_ylim()
 ax.fill_between(df_sma.index, *[-4,4], where=warning, facecolor='red', alpha=.2)
 ax.set_ylim(lims)
