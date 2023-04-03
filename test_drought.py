@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 
 INDEX_MAP = {
     'SPI': era.SPI,
-    'SMI': era.SoilMoisture
+    'SMA': era.SoilMoisture
 }
 
 class DROUGHT:
