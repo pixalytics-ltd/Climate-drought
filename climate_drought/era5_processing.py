@@ -353,5 +353,4 @@ class SoilMoisture(DroughtIndex):
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
-
         return swv_dekads
