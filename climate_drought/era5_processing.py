@@ -350,6 +350,9 @@ class SoilMoisture(DroughtIndex):
         # Create dataframe
         df = xr.merge([daily_swv,swv_zscores]).to_dataframe()
 
+        # Output to JSON
+        self.generate_geojson(df)
+
         self.logger.info("Completed processing of ERA5 soil water data.")
 
 
