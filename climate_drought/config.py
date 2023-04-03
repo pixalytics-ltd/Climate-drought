@@ -7,8 +7,9 @@ class AnalysisArgs():
         self.index = product
 
 class Config():
-    def __init__(self,outdir='outdir',verbose=True,baseline_start='19850101',baseline_end='20221231'):
+    def __init__(self,outdir='output',indir='input',verbose=True,baseline_start='19850101',baseline_end='20221231'):
         self.outdir = outdir
+        self.indir = indir
         self.verbose = verbose
         self.baseline_start = baseline_start
         self.baseline_end = baseline_end
