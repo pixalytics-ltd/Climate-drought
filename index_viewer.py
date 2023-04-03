@@ -108,7 +108,7 @@ ax.legend()
 
 fig4,ax = plt.subplots(figsize=(10,3))
 for n in [1,2,3,4]:
-    ax.plot(df_sma.index,df_sma['swvl' + str(n)],label='Layer {}'.format(n))
+    ax.plot(df_sma.index,df_sma['zscore_swvl' + str(n)],label='Layer {}'.format(n))
 
 ax.set_title('Soil water volume z-score')
 ax.set_xlim(ax2.get_xlim())
