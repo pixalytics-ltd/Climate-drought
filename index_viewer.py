@@ -43,9 +43,11 @@ def create_indices():
     df_spi = spi.process()
     df_sma = sma.process()
 
-    return aa, df_spi, df_sma
+    swvl_fname = sma.swv_monthly_download.download_file_path
 
-aa, df_spi, df_sma = create_indices()
+    return aa, df_spi, df_sma, swvl_fname
+
+aa, df_spi, df_sma, swvl_fname = create_indices()
 
 boxsz = 0.1
 latmax=aa.latitude + boxsz
@@ -90,23 +92,23 @@ lims = ax2.get_ylim()
 ax2.fill_between(df_spi.index, *[-4,4], where=warning, facecolor='red', alpha=.2)
 ax2.set_ylim(lims)
 
-# fig3,ax = plt.subplots(figsize=(10,3))
-# plot_var = lambda var, n: ax.plot(df_sma.index,df_sma[var],label='Layer {} ('.format(n) + r'$\bar{x}$' + ' = {mean:.2f})'.format(mean=df_sma[var].mean()))
-# plot_var('swvl1',1)
-# plot_var('swvl2',2)
-# plot_var('swvl3',3)
-# plot_var('swvl4',4)
+# access raw soil moisture data
+ds_swvl = xr.open_dataset(swvl_fname).isel(expver=0).mean(('latitude','longitude')).drop_vars('expver')
 
-# ax.set_title('Soil water volume')
-# ax.grid()
-# ax.legend()
+fig3,ax = plt.subplots(figsize=(10,3))
+for n in [1,2,3,4]:
+    var = 'swvl' + str(n)
+    layer_mean = ds_swvl[var].mean()
+    im1 = ax.plot(ds_swvl.time,ds_swvl[var],label='Layer {} ('.format(n) + r'$\bar{x}$' + ' = {mean:.2f})'.format(mean=layer_mean))
+    ax.plot(ds_swvl.time,[layer_mean for _ in ds_swvl.time],c=im1[0].get_color())
+
+ax.set_title('Soil water volume')
+ax.grid()
+ax.legend()
 
 fig4,ax = plt.subplots(figsize=(10,3))
-plot_var = lambda var, n: ax.plot(df_sma.index,df_sma[var],label='Layer {}'.format(n))
-plot_var('swvl1_zscore',1)
-plot_var('swvl2_zscore',2)
-plot_var('swvl3_zscore',3)
-plot_var('swvl4_zscore',4)
+for n in [1,2,3,4]:
+    ax.plot(df_sma.index,df_sma['swvl' + str(n)],label='Layer {}'.format(n))
 
 ax.set_title('Soil water volume z-score')
 ax.set_xlim(ax2.get_xlim())
@@ -122,7 +124,7 @@ ax.set_ylim(lims)
 with col2:
     #st.pyplot(fig1)
     st.pyplot(fig2)
-    #st.pyplot(fig3)
+    st.pyplot(fig3)
     st.pyplot(fig4)
     
 
