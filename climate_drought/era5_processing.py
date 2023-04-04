@@ -69,6 +69,7 @@ class DroughtIndex(ABC):
          :return: path to the geojson file
          """
         # Build GeoJSON object
+        self.logger.debug("GeoJSON output:")
         self.feature_collection = {"type": "FeatureCollection", "features": []}
 
         for i in df_filtered.index:
@@ -77,7 +78,7 @@ class DroughtIndex(ABC):
             # Extract columns as properties
             property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
             parsed = json.loads(property)
-            print("Sam: ",parsed)
+            self.logger.debug("Row: {}".format(parsed))
             feature['properties'] = parsed
 
             # Add feature
@@ -313,7 +314,7 @@ class SoilMoisture(DroughtIndex):
         
         # download baseline and monthly data
         exists_or_download(self.swv_monthly_download)
-        exists_or_download(self.swv_monthly_download)
+        exists_or_download(self.swv_hourly_download)
 
         return [self.swv_monthly_download.download_file_path, self.swv_hourly_download.download_file_path]
 
