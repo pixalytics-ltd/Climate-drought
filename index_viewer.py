@@ -6,9 +6,10 @@ import xarray as xr
 import streamlit as st
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
+from typing import List
 
 # Links from Climate-drought repository
-from climate_drought import config, era5_processing
+from climate_drought import config, drought_indices as dri
 
 # Script to generate a web app to view and interact with Index input and output data.
 # To run:
@@ -20,6 +21,35 @@ from climate_drought import config, era5_processing
 OUTPUT_DIR = 'output'
 
 st.set_page_config(layout="wide")
+
+@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
+def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,warning_var=None):
+
+    fig, ax = plt.subplots(figsize=(10,3))
+
+    time = df.index
+
+    for var in varnames:
+        if showmean:
+            var_mean = df[var].mean()
+        legend = var + (' ('+ r'$\bar{x}$' + ' = {mean:.2f})'.format(mean=var_mean) if showmean else '')
+        im1 = ax.plot(time,df[var],label=legend)
+        if showmean:
+            im2 = ax.plot(time,[var_mean for _ in time],c=im1[0].get_color())
+
+    ax.set_title(title)
+    ax.grid()
+    
+    if len(varnames) > 1:
+        ax.legend()
+
+    if not warning==0: 
+        markwarning = df[warning_var] < warning
+        lims = ax.get_ylim()
+        ax.fill_between(df.index, *[-4,4], where=markwarning, facecolor='red', alpha=.2)
+        ax.set_ylim(lims)
+
+    return fig, ax
 
 @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
 def create_indices():
@@ -34,8 +64,8 @@ def create_indices():
     cf = config.Config(outdir= 'output')
 
     # Make sure everything is already downloaded else it'll take ages
-    spi = era5_processing.SPI(cf,aa)
-    sma = era5_processing.SoilMoisture(cf,aa)
+    spi = dri.SPI(cf,aa)
+    sma = dri.SMA_ECMWF(cf,aa)
 
     spi.download()
     sma.download()
@@ -47,85 +77,74 @@ def create_indices():
 
     return aa, df_spi, df_sma, swvl_fname
 
-aa, df_spi, df_sma, swvl_fname = create_indices()
+@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
+def load_era_soilmoisture(fname):
+    return  xr.open_dataset(fname).isel(expver=0).mean(('latitude','longitude')).drop_vars('expver').to_dataframe()
 
-boxsz = 0.1
-latmax=aa.latitude + boxsz
-lonmin=aa.longitude - boxsz
-latmin=aa.latitude - boxsz
-lonmax=aa.longitude + boxsz
+@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
+def draw_map(aa):
+    boxsz = 0.1
+    latmax=aa.latitude + boxsz
+    lonmin=aa.longitude - boxsz
+    latmin=aa.latitude - boxsz
+    lonmax=aa.longitude + boxsz
+
+    fig = go.Figure(go.Scattermapbox(
+        fill = "toself",
+        lon = [lonmin,lonmax,lonmax,lonmin], lat = [latmax,latmax,latmin,latmin],
+        marker = { 'size': 10, 'color': "orange" }))
+
+    fig.update_layout(
+        width = 500,
+        height = 500,
+        margin=dict(l=0, r=20, t=20, b=20),
+        mapbox = {
+            'style': "stamen-terrain",
+            'center': {'lon': aa.longitude, 'lat': aa.latitude },
+            'zoom': 7},
+        showlegend = False)
+    return fig
+
+aa, df_spi, df_sma, swvl_fname = create_indices()
+ds_swvl = load_era_soilmoisture(swvl_fname)
+
+
+plot_options = {'SPI':False,
+                'Soil Water Vol. (ECMWF)':False,
+                'SMA (ECMWF)':False,
+                'SMA (EDO)':False}
+
 
 with st.sidebar:
+    st.write('Plots to show')
+    for itm in plot_options:
+        plot_options[itm] = st.checkbox(itm,key=itm)
+    print(plot_options)
     sma_level = st.selectbox('Soil Water Indicator Level',['1','2','3','4'])
 
-fig = go.Figure(go.Scattermapbox(
-    fill = "toself",
-    lon = [lonmin,lonmax,lonmax,lonmin], lat = [latmax,latmax,latmin,latmin],
-    marker = { 'size': 10, 'color': "orange" }))
-
-fig.update_layout(
-    width = 500,
-    height = 500,
-    margin=dict(l=0, r=20, t=20, b=20),
-    mapbox = {
-        'style': "stamen-terrain",
-        'center': {'lon': aa.longitude, 'lat': aa.latitude },
-        'zoom': 7},
-    showlegend = False)
 
 col1,col2 = st.columns(2)
 with col1:
-    st.plotly_chart(fig)
+    st.plotly_chart(draw_map(aa))
 
-# fig1,ax = plt.subplots(figsize=(10,3))
-# ax.plot(df_spi.index,df_spi.tp,label='Precipitation')
-# ax.set_title('Total Precipitation')
-# ax.grid()
+figs = []
 
-fig2,ax2 = plt.subplots(figsize=(10,3))
-ax2.plot(df_spi.index,df_spi.spi,label='SPI')
-ax2.set_title('Standardized Precipitation Index')
-ax2.grid()
+if plot_options['SPI']:
+    fig, ax = plot(df_spi,['spi'],'Standardised Precipitation Index',warning=-1,warning_var='spi')
+    figs.append(fig)
 
-warning = df_spi.spi < -1
-lims = ax2.get_ylim()
-ax2.fill_between(df_spi.index, *[-4,4], where=warning, facecolor='red', alpha=.2)
-ax2.set_ylim(lims)
+if plot_options['Soil Water Vol. (ECMWF)']:
+    fig, ax = plot(ds_swvl,['swvl1','swvl2','swvl3','swvl4'],title='Soil Water Volume',showmean=True)
+    figs.append(fig)
 
-# access raw soil moisture data
-ds_swvl = xr.open_dataset(swvl_fname).isel(expver=0).mean(('latitude','longitude')).drop_vars('expver')
+if plot_options['SMA (ECMWF)']:
+    fig, ax = plot(df_sma,['zscore_swvl'+ str(n) for n in[1,2,3,4]],title='Soil Moisture Anomaly (ECMWF)',warning=-1,warning_var='zscore_swvl{}'.format(sma_level))
+    figs.append(fig)
 
-fig3,ax = plt.subplots(figsize=(10,3))
-for n in [1,2,3,4]:
-    var = 'swvl' + str(n)
-    layer_mean = ds_swvl[var].mean()
-    im1 = ax.plot(ds_swvl.time,ds_swvl[var],label='Layer {} ('.format(n) + r'$\bar{x}$' + ' = {mean:.2f})'.format(mean=layer_mean))
-    ax.plot(ds_swvl.time,[layer_mean for _ in ds_swvl.time],c=im1[0].get_color())
-
-ax.set_title('Soil water volume')
-ax.grid()
-ax.legend()
-
-fig4,ax = plt.subplots(figsize=(10,3))
-for n in [1,2,3,4]:
-    ax.plot(df_sma.index,df_sma['zscore_swvl' + str(n)],label='Layer {}'.format(n))
-
-ax.set_title('Soil water volume z-score')
-ax.set_xlim(ax2.get_xlim())
-ax.grid()
-ax.legend()
-
-
-warning = df_sma['zscore_swvl{}'.format(sma_level)] < -1
-lims = ax.get_ylim()
-ax.fill_between(df_sma.index, *[-4,4], where=warning, facecolor='red', alpha=.2)
-ax.set_ylim(lims)
 
 with col2:
-    #st.pyplot(fig1)
-    st.pyplot(fig2)
-    st.pyplot(fig3)
-    st.pyplot(fig4)
+    for f in figs:
+        st.pyplot(f)
     
 
 

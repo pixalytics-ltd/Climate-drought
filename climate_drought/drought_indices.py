@@ -21,8 +21,6 @@ from typing import List
 # Logging
 logging.basicConfig(level=logging.DEBUG)
 
-# Locations of pre-downloaded data
-
 class DroughtIndex(ABC):
     """
     Base class providing functionality for all drought indices
