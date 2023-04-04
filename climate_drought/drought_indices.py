@@ -437,3 +437,41 @@ class FPAR_EDO(DroughtIndex):
         self.logger.info("Completed processing of ERA5 fAPAR data.")
 
         return df
+
+class CDI(DroughtIndex):
+    """
+
+    """
+    def __init__(self, config: config.Config, args: config.AnalysisArgs, sma_source='EDO'):
+        super().__init__(config,args,index_shortname='cdi')
+
+        # Initialise all separate indicators to be combined
+        self.spi = SPI(config,args)
+        self.sma = SMA_ECMWF(config,args) if sma_source=='ECMWF' else SMA_EDO(config,args)
+        self.fpr = FPAR_EDO(config,args)
+
+    def download(self):
+        self.spi.download()
+        self.sma.download()
+        self.fpr.download()
+        
+    def process(self):
+        self.spi.process()
+        self.sma.process()
+        self.fpr.process()
+
+        # warning levels
+        # watch = spi < -1
+        # warning = sma < -1 and spi < -1
+        # alert 1 = fpr < -1 and spi < -1
+        # alert 2 = all < -1
+
+
+
+        
+        # Output to JSON
+        self.generate_geojson(df)
+
+        self.logger.info("Completed processing of ERA5 fAPAR data.")
+
+        return df
