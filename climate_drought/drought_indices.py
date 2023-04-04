@@ -396,3 +396,44 @@ class SMA_EDO(DroughtIndex):
         self.logger.info("Completed processing of ERA5 soil water data.")
 
         return df
+
+class FPAR_EDO(DroughtIndex):
+    """
+    Specialisation of the Drought class for processing pre-downlaoded photosynthetically active radiation anomaly data from EDO.
+    Requires that you have downladed all years of 'Fraction of Absorbed Photo....' and 'Fraction of Absorbed.... (VIIRS)' 
+    from https://edo.jrc.ec.europa.eu/gdo/php/index.php?id=2112 and stored them in the 'input' folder as specified in the Config object
+    i.e. data must all be in /inputs/fpanv
+    """
+    def __init__(self, config: config.Config, args: config.AnalysisArgs):
+        super().__init__(config,args,index_shortname='fpar')
+        self.files_loc = config.indir + '/fpanv'
+        self.filelist = glob.glob(self.files_loc + '/f*.nc')
+
+    def download(self):
+        # Do nothing -data already downloaded
+        if len(self.filelist) > 0:
+            self.logger.info("Downloaded files available.")
+        else:
+            self.logger.info("Cannot find downloaded files in folder {}".format(self.files_loc))
+        return self.files_loc
+        
+
+    def process(self):
+        # open all dses - doesn't take long
+        get_ds = lambda fname: xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['lat','lon','4326']) 
+        df = xr.merge(get_ds(fname) for fname in self.filelist).to_dataframe()
+
+        # trim to required dates
+        df = df.loc[(df.index >= self.args.start_date) & (df.index <= self.args.end_date)]
+
+        # smand is the modelled data and is availale more recently than the long term time series of smant
+        # replace missing fpanv values (which are better quality data?) with fapan
+        df.fpanv.fillna(df.fapan, inplace=True)
+        del df['fapan']
+        
+        # Output to JSON
+        self.generate_geojson(df)
+
+        self.logger.info("Completed processing of ERA5 fAPAR data.")
+
+        return df

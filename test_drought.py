@@ -9,14 +9,16 @@ from datetime import date, datetime
 import numpy as np
 
 # Links from Climate-drought repository
-from climate_drought import era5_processing as era, config
+from climate_drought import drought_indices as dri, config
 
 import logging
 logging.basicConfig(level=logging.INFO)
 
 INDEX_MAP = {
-    'SPI': era.SPI,
-    'SMA': era.SoilMoisture
+    'SPI': dri.SPI,
+    'SMA_ECMWF': dri.SMA_ECMWF,
+    'SMA_EDO': dri.SMA_EDO,
+    'fAPAR': dri.FPAR_EDO
 }
 
 class DROUGHT:
@@ -31,7 +33,7 @@ class DROUGHT:
     def __init__(self,args):
 
         # Transfer args
-        self.config = config.Config(args.outdir,args.verbose)
+        self.config = config.Config(args.outdir,args.indir,args.verbose)
         self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date,args.product)
 
         # Setup logging
@@ -43,7 +45,8 @@ class DROUGHT:
         self.logger.info("\n")
 
     @property
-    def index(self) -> era.DroughtIndex:
+    def index(self) -> dri.DroughtIndex:
+        print(self.config.indir)
         return INDEX_MAP[self.args.index](self.config, self.args)
 
 
@@ -61,7 +64,6 @@ class DROUGHT:
             downloaded_files = idx.download()
             processed_file = idx.process()
             self.logger.info("Downloading and processing complete for '{}' completed.".format(idx.output_file_path))
-            assert idx.output_file_path == processed_file
 
         if os.path.exists(idx.output_file_path):
             exit_code = 1
@@ -81,6 +83,14 @@ def main():
         dest="outdir",
         default=True,
         help="Output data folder",
+    )
+    parser.add_argument(
+        "-i",
+        "--indir",
+        type=str,
+        dest="indir",
+        default="input",
+        help="Input data folder",
     )
     parser.add_argument(
         "-v",
