@@ -14,9 +14,10 @@ from climate_drought import era5_processing as era, config
 import logging
 logging.basicConfig(level=logging.INFO)
 
-# ERA5 download range
-Sdate = '19850101'
-Edate = '20221231'
+INDEX_MAP = {
+    'SPI': era.SPI,
+    'SMA': era.SoilMoisture
+}
 
 class DROUGHT:
     """
@@ -31,7 +32,7 @@ class DROUGHT:
 
         # Transfer args
         self.config = config.Config(args.outdir,args.verbose)
-        self.args = config.AnalysisArgs(args)
+        self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date,args.product)
 
         # Setup logging
         self.logger = logging.getLogger("test_drought")
@@ -41,39 +42,34 @@ class DROUGHT:
 
         self.logger.info("\n")
 
+    @property
+    def index(self) -> era.DroughtIndex:
+        return INDEX_MAP[self.args.index](self.config, self.args)
 
-    def run_spi(self):
 
-        self.logger.debug("Computing SPI index for {sd} to {ed}.".format(sd=self.config.baseline_start, ed=self.config.baseline_end))
+    def run_index(self):
+
+        self.logger.debug("Computing {idx} index for {sd} to {ed}.".format(idx=self.args.index, sd=self.config.baseline_start, ed=self.config.baseline_end))
 
         exit_code = 0
-       
 
-        spi = era.SPI(self.config,self.args)
-        output_file_path = spi.output_file_path
+        idx = self.index
 
-        if os.path.exists(output_file_path):
-            self.logger.info("Processed file '{}' already exists.".format(output_file_path))
+        if os.path.exists(idx.output_file_path):
+            self.logger.info("Processed file '{}' already exists.".format(idx.output_file_path))
         else:
-            downloaded_file = spi.download()
-            processed_file = spi.process()
-            self.logger.info("Downloading and processing complete for '{}' completed.".format(output_file_path))
-            assert output_file_path == processed_file
+            downloaded_files = idx.download()
+            processed_file = idx.process()
+            self.logger.info("Downloading and processing complete for '{}' completed.".format(idx.output_file_path))
+            assert idx.output_file_path == processed_file
 
-        if os.path.exists(output_file_path):
+        if os.path.exists(idx.output_file_path):
             exit_code = 1
-            self.logger.info("SPI processing complete")
-
-        #except Exception as ex:
-        #    # Log any errors, and move on to the next date
-        #    exit_status = "failed: {}".format(ex)
-        #    self.logger.warning("SPI for {d} failed {r}.".format(
-        #            d=self.args.start_date, r=exit_status))
+            self.logger.info("{} processing complete".format(self.args.index))
 
         self.logger.info("Processing complete")
 
         return exit_code
-
 
 def main():
     parser = argparse.ArgumentParser(description="Test Drought Indices")
@@ -107,7 +103,7 @@ def main():
 
     print("Args: {}".format(args))
     drought = DROUGHT(args)
-    result = drought.run_spi()
+    result = drought.run_index()
 
 
 if __name__ == "__main__":
