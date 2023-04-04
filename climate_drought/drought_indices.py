@@ -359,11 +359,14 @@ class SMA_ECMWF(DroughtIndex):
 class SMA_EDO(DroughtIndex):
     """
     Specialisation of the Drought class for processing pre-downlaoded soil moisture anomaly data from EDO.
+    Requires that you have downladed all years of 'Ensemble Soil Moisture Anomaly' and 'Ensemble Soil Moisture Anomaly (2M, Lisflood...' 
+    from https://edo.jrc.ec.europa.eu/gdo/php/index.php?id=2112 and stored them in the 'input' folder as specified in the Config object
+    i.e. Ensemble moisture data must all be in /inputs/smant
     """
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
         super().__init__(config,args,index_shortname='smedo')
         self.files_loc = config.indir + '/smant'
-        self.filelist = glob.glob('/sma*.nc')
+        self.filelist = glob.glob(self.files_loc + '/sma*.nc')
 
     def download(self):
         # Do nothing -data already downloaded
@@ -376,6 +379,20 @@ class SMA_EDO(DroughtIndex):
 
     def process(self):
         # open all dses - doesn't take long
-        get_ds = lambda fname: xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest')
-        ds = xr.merge(get_ds(fname) for fname in self.filelist)
+        get_ds = lambda fname: xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['lat','lon','4326']) 
+        df = xr.merge(get_ds(fname) for fname in self.filelist).to_dataframe()
 
+        # trim to required dates
+        df = df.loc[(df.index >= self.args.start_date) & (df.index <= self.args.end_date)]
+
+        # smand is the modelled data and is availale more recently than the long term time series of smant
+        # replace missing smant values with smand and discard
+        df.smant.fillna(df.smand, inplace=True)
+        del df['smand']
+        
+        # Output to JSON
+        self.generate_geojson(df)
+
+        self.logger.info("Completed processing of ERA5 soil water data.")
+
+        return df

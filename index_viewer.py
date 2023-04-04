@@ -66,16 +66,18 @@ def create_indices():
     # Make sure everything is already downloaded else it'll take ages
     spi = dri.SPI(cf,aa)
     sma = dri.SMA_ECMWF(cf,aa)
+    sma_edo = dri.SMA_EDO(cf,aa)
 
     spi.download()
     sma.download()
 
     df_spi = spi.process()
     df_sma = sma.process()
+    df_sma_edo = sma_edo.process()
 
     swvl_fname = sma.swv_monthly_download.download_file_path
 
-    return aa, df_spi, df_sma, swvl_fname
+    return aa, df_spi, df_sma, df_sma_edo, swvl_fname
 
 @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
 def load_era_soilmoisture(fname):
@@ -105,7 +107,7 @@ def draw_map(aa):
         showlegend = False)
     return fig
 
-aa, df_spi, df_sma, swvl_fname = create_indices()
+aa, df_spi, df_sma, df_sma_edo, swvl_fname = create_indices()
 ds_swvl = load_era_soilmoisture(swvl_fname)
 
 
@@ -139,6 +141,10 @@ if plot_options['Soil Water Vol. (ECMWF)']:
 
 if plot_options['SMA (ECMWF)']:
     fig, ax = plot(df_sma,['zscore_swvl'+ str(n) for n in[1,2,3,4]],title='Soil Moisture Anomaly (ECMWF)',warning=-1,warning_var='zscore_swvl{}'.format(sma_level))
+    figs.append(fig)
+
+if plot_options['SMA (EDO)']:
+    fig, ax = plot(df_sma_edo,['smant'],title='Ensemble Soil Moisture Anomaly (EDO)',warning=-1,warning_var='smant')
     figs.append(fig)
 
 
