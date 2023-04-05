@@ -1,6 +1,7 @@
 import logging
 import os
 import numpy as np
+import pandas as pd
 import xarray as xr
 import json
 import geojson
@@ -191,8 +192,6 @@ class SPI(DroughtIndex):
         # initialise the download object using the request, but don't download yet
         self.spi_download = erq.ERA5Download(req,self.logger)
 
-        self.logger.debug("Initiated ERA5 daily processing of temperature strategy.")
-
     def download(self):
         """
         Download requried data from ERA5 portal using the imported ERA5 request module.
@@ -250,14 +249,6 @@ class SPI(DroughtIndex):
         self.logger.debug("Index: {}".format(df.index[0]))
         df_filtered = df.loc[(df.index >= self.args.start_date) & (df.index <= self.args.end_date)]
 
-        # Convert date/time to string and then set this as the index
-        df_filtered['StartDateTime'] = df_filtered.index.strftime('%Y-%m-%dT00:00:00')
-
-        # Remove any NaN values
-        df_filtered = df_filtered[~df_filtered.isnull().any(axis=1)]
-        self.logger.debug("Updated DF: ")
-        self.logger.debug(df_filtered.head())
-
         return df_filtered
     
 
@@ -274,7 +265,9 @@ class SPI(DroughtIndex):
         
         # Calculates SPI precipitation drought index
         df_filtered = self.convert_precip_to_spi()
-        self.generate_geojson(df_filtered)
+
+        if not os.path.isfile(self.output_file_path):
+            self.generate_geojson(df_filtered)
 
         return df_filtered
     
@@ -342,7 +335,7 @@ class SMA_ECMWF(DroughtIndex):
 
         # Resmple hourly data to dekafs
         hourly_swv = hourly_swv.drop_vars(['latitude','longitude']).to_dataframe()
-        swv_dekads = utils.to_dekads(hourly_swv)
+        swv_dekads = utils.df_to_dekads(hourly_swv)
         
         # Calculate zscores
         for layer in [1,2,3,4]:
@@ -391,7 +384,8 @@ class SMA_EDO(DroughtIndex):
         del df['smand']
         
         # Output to JSON
-        self.generate_geojson(df)
+        if not os.path.isfile(self.output_file_path):
+            self.generate_geojson(df)
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
@@ -407,7 +401,7 @@ class FPAR_EDO(DroughtIndex):
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
         super().__init__(config,args,index_shortname='fpar')
         self.files_loc = config.indir + '/fpanv'
-        self.filelist = glob.glob(self.files_loc + '/f*.nc')
+        self.filelist = glob.glob(self.files_loc + '/fpanv*.nc')
 
     def download(self):
         # Do nothing -data already downloaded
@@ -428,11 +422,12 @@ class FPAR_EDO(DroughtIndex):
 
         # smand is the modelled data and is availale more recently than the long term time series of smant
         # replace missing fpanv values (which are better quality data?) with fapan
-        df.fpanv.fillna(df.fapan, inplace=True)
-        del df['fapan']
+        # df.fpanv.fillna(df.fapan, inplace=True)
+        # del df['fapan']
         
         # Output to JSON
-        self.generate_geojson(df)
+        if not os.path.isfile(self.output_file_path):
+            self.generate_geojson(df)
 
         self.logger.info("Completed processing of ERA5 fAPAR data.")
 
@@ -442,12 +437,12 @@ class CDI(DroughtIndex):
     """
 
     """
-    def __init__(self, config: config.Config, args: config.AnalysisArgs, sma_source='EDO'):
+    def __init__(self, config: config.Config, args: config.AnalysisArgs):
         super().__init__(config,args,index_shortname='cdi')
 
         # Initialise all separate indicators to be combined
         self.spi = SPI(config,args)
-        self.sma = SMA_ECMWF(config,args) if sma_source=='ECMWF' else SMA_EDO(config,args)
+        self.sma = SMA_ECMWF(config,args) if args.sma_source=='ECMWF' else SMA_EDO(config,args)
         self.fpr = FPAR_EDO(config,args)
 
     def download(self):
@@ -456,22 +451,92 @@ class CDI(DroughtIndex):
         self.fpr.download()
         
     def process(self):
-        self.spi.process()
-        self.sma.process()
-        self.fpr.process()
 
-        # warning levels
-        # watch = spi < -1
-        # warning = sma < -1 and spi < -1
-        # alert 1 = fpr < -1 and spi < -1
-        # alert 2 = all < -1
+        self.logger.info("Computing Combined Drought Indicator...")
 
+        # For a CDI at time x, we use:
+        # SPI: x - 1 month (3 dekads)
+        # SMA: x - 2 dekad
+        # fAPAR: x - previous full dekad
 
+        # Get each index into the required format
+        # Helper functions
+        idx_np = lambda df: df.to_numpy().flatten()
+        shift_date = lambda arr, n: np.pad(arr[:-n],(n,0),'constant',constant_values=(np.nan,))
 
+        # Create a regular datetime index to make sure no time periods are missing
+        # Monthly for SPI - ASSUMES SPI data is always at the start of each month. TODO JC5 make sure this is the case and fix if not
+        time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
+
+        # Dekads for SMA and fAPAR
+        time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
+
+        # ------ SPI ------
+        df_spi = self.spi.process()
+
+        # Fill any missing times
+        df_spi = utils.fill_gaps(time_months,df_spi)
+        self.df_spi = df_spi
+
+        # Convert to dekads for consistency with other timeseries
+        # Use the same value 3 times a month for each dekad
+        spi = idx_np(df_spi.spi).repeat(3)
+
+        # Shift backwards by 3 dekads
+        spi = shift_date(spi,3)
+        self.spi_np = spi
         
-        # Output to JSON
-        self.generate_geojson(df)
+        # ------ SMA ------
+        df_sma = self.sma.process()
 
-        self.logger.info("Completed processing of ERA5 fAPAR data.")
+        # Fill any missing times
+        df_sma = utils.fill_gaps(time_dekads,df_sma)
+
+        # Shift backwards by 2 dekads
+        sma = shift_date(idx_np(df_sma),2)
+        self.sma_np = sma
+
+        # ------ fAPAR ------
+        df_fpr = self.fpr.process()
+
+        # Fill any missing times
+        df_fpr = utils.fill_gaps(time_dekads,df_fpr)
+
+        # Shift backward by 1 dekad
+        fpr = shift_date(idx_np(df_fpr),1)
+        self.fpr_np = fpr
+
+        # Now create CDI with following levels:
+        # 0: no warning
+        # 1: watch = spi < -1
+        # 2: warning = sma < -1 and spi < -1
+        # 3: alert 1 = fpr < -1 and spi < -1
+        # 4: alert 2 = all < -1
+
+        spi_warn = spi < -1
+        sma_warn = sma < -1
+        fpr_warn = fpr < -1
+
+        cdi = []
+        for spi_, sma_, fpr_ in zip(spi_warn,sma_warn,fpr_warn):
+            if spi_ and sma_ and fpr_:
+                cdi.append(4) # alert 2
+            elif spi_ and fpr_:
+                cdi.append(3) # alert 1
+            elif spi_ and sma_:
+                cdi.append(2) # warning
+            elif spi_:
+                cdi.append(1) # watch
+            else:
+                cdi.append(0) # normal
+
+        # convert back to dataframe and combine with others
+        df = pd.DataFrame({'SPI':spi,'SMA':sma,'fAPAR':fpr,'CDI':cdi},index=time_dekads)
+
+        # Output to JSON
+        if not os.path.isfile(self.output_file_path):
+            self.generate_geojson(df)
+
+        self.logger.info("Completed processing of ERA5 CDI data.")
 
         return df

@@ -39,10 +39,41 @@ def daterange(sdate, edate, rtv):
         dates.append(y)
     return dates
 
-def to_dekads(df):
+def df_to_dekads(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Utility function to resample a DataFrame with frequency greater than 10 days into dekads
+    :param df: pd.Dataframe with time index with a frequency > 10 days e.g. daily, hourly
+    :return: dataframe with dekad frequency
+    """
     d = df.index.day - np.clip((df.index.day-1) // 10, 0, 2)*10 - 1
     date = df.index.values - np.array(d, dtype="timedelta64[D]")
     return df.groupby(date).mean()
+
+def dti_dekads(sdate,edate):
+    """
+    Utility function to create a datetime index list in dekads between a defined start and end date
+    :param sdate: start date, format 'YYYYMMDD'
+    :param edate: end date, format 'YYYYMMDD'
+    :return: datetimeindex in dekads
+    """
+    dti = pd.date_range(sdate,edate,freq='1D')
+    d = dti.day - np.clip((dti.day-1) // 10, 0, 2)*10 - 1
+    date = dti.values - np.array(d, dtype="timedelta64[D]")
+    return pd.DatetimeIndex(np.unique(date))
+
+def fill_gaps(index, df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Utility function to populate missing data in a DataFrame against a defined list of times
+    :param index: index we want to populate 
+    :param df: pd.DataFrame to be interpolated onto index
+    :return: pd.DataFrame with a regular datetime index where missing data is populated with NaNs
+    """
+    gaps = index[~index.isin(df.index)]
+    if len(gaps) > 0:
+        df_gaps = pd.DataFrame(index=gaps)
+        return pd.concat([df,df_gaps])
+    else:
+        return df
 
 class setup_args:
     working_dir = '/data/webservice/CLIMATE'
