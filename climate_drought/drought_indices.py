@@ -266,6 +266,11 @@ class SPI(DroughtIndex):
         # Calculates SPI precipitation drought index
         df_filtered = self.convert_precip_to_spi()
 
+        # Fill any missing gaps
+        # Monthly for SPI - ASSUMES SPI data is always at the start of each month. TODO JC5 make sure this is the case and fix if not
+        time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
+        df_filtered = utils.fill_gaps(time_months,df_filtered)
+
         if not os.path.isfile(self.output_file_path):
             self.generate_geojson(df_filtered)
 
@@ -342,6 +347,10 @@ class SMA_ECMWF(DroughtIndex):
             col = 'swvl' + str(layer)
             swv_dekads['zscore_' + col] = ((swv_dekads[col] - swv_mean[col].item()) / swv_std[col].item())
 
+        # fill any data gaps
+        time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
+        swv_dekads = utils.fill_gaps(time_dekads,swv_dekads)
+
         # Output to JSON
         self.generate_geojson(swv_dekads)
 
@@ -382,6 +391,10 @@ class SMA_EDO(DroughtIndex):
         # replace missing smant values with smand and discard
         df.smant.fillna(df.smand, inplace=True)
         del df['smand']
+
+        # fill any data gaps
+        time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
+        swv_dekads = utils.fill_gaps(time_dekads,df)
         
         # Output to JSON
         if not os.path.isfile(self.output_file_path):
@@ -424,6 +437,10 @@ class FPAR_EDO(DroughtIndex):
         # replace missing fpanv values (which are better quality data?) with fapan
         # df.fpanv.fillna(df.fapan, inplace=True)
         # del df['fapan']
+
+        # fill any data gaps
+        time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
+        df = utils.fill_gaps(time_dekads,df)
         
         # Output to JSON
         if not os.path.isfile(self.output_file_path):
@@ -465,17 +482,12 @@ class CDI(DroughtIndex):
         shift_date = lambda arr, n: np.pad(arr[:-n],(n,0),'constant',constant_values=(np.nan,))
 
         # Create a regular datetime index to make sure no time periods are missing
-        # Monthly for SPI - ASSUMES SPI data is always at the start of each month. TODO JC5 make sure this is the case and fix if not
-        time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
 
         # Dekads for SMA and fAPAR
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
 
         # ------ SPI ------
         df_spi = self.spi.process()
-
-        # Fill any missing times
-        df_spi = utils.fill_gaps(time_months,df_spi)
         self.df_spi = df_spi
 
         # Convert to dekads for consistency with other timeseries
@@ -489,18 +501,12 @@ class CDI(DroughtIndex):
         # ------ SMA ------
         df_sma = self.sma.process()
 
-        # Fill any missing times
-        df_sma = utils.fill_gaps(time_dekads,df_sma)
-
         # Shift backwards by 2 dekads
         sma = shift_date(idx_np(df_sma),2)
         self.sma_np = sma
 
         # ------ fAPAR ------
         df_fpr = self.fpr.process()
-
-        # Fill any missing times
-        df_fpr = utils.fill_gaps(time_dekads,df_fpr)
 
         # Shift backward by 1 dekad
         fpr = shift_date(idx_np(df_fpr),1)
