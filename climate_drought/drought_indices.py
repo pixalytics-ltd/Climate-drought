@@ -394,7 +394,7 @@ class SMA_EDO(DroughtIndex):
 
         # fill any data gaps
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
-        swv_dekads = utils.fill_gaps(time_dekads,df)
+        df = utils.fill_gaps(time_dekads,df)
         
         # Output to JSON
         if not os.path.isfile(self.output_file_path):
