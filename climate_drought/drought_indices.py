@@ -5,7 +5,8 @@ import pandas as pd
 import xarray as xr
 import json
 import geojson
-import glob 
+import glob
+import datetime
 
 from climate_drought import indices, config, utils, era5_request as erq
 
@@ -20,7 +21,6 @@ from abc import ABC, abstractclassmethod
 from typing import List
 
 # Logging
-logging.basicConfig(level=logging.DEBUG)
 
 class DroughtIndex(ABC):
     """
@@ -32,14 +32,17 @@ class DroughtIndex(ABC):
         :param config: config object
         :param args: analysis args object
         """
-        # set up logger
-        self.logger = logging.getLogger("ERA5_Processing")
-        self.logger.setLevel(logging.DEBUG) if config.verbose else self.logger.setLevel(logging.INFO)
         
         # transfer inputs
         self.config = config
         self.args = args
         self.index_shortname = index_shortname
+
+        # set up logger
+        logging.basicConfig(filename='{0}/log_{1}.txt'.format(config.outdir,datetime.datetime.now()),level=logging.DEBUG)
+
+        self.logger = logging.getLogger("ERA5_Processing")
+        self.logger.setLevel(logging.DEBUG) if config.verbose else self.logger.setLevel(logging.INFO)
 
     @property
     def output_file_path(self):

@@ -20,6 +20,11 @@ from climate_drought import config, drought_indices as dri
 
 OUTPUT_DIR = 'output'
 
+C_WATCH = 'gold'
+C_WARNING = 'darkorange'
+C_ALERT1 = 'orangered'
+C_ALERT2 = 'crimson'
+
 st.set_page_config(layout="wide")
 
 @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
@@ -39,11 +44,26 @@ def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,w
 
     ax.set_title(title)
     ax.grid()
+    ax.set_xlim([pd.Timestamp(aa.start_date), pd.Timestamp(aa.end_date)])
     
     if len(varnames) > 1:
         ax.legend()
 
-    if not warning==0: 
+    if plot_cdi:
+        markwatch = cdi['CDI'] == 1
+        markwarning = cdi['CDI'] == 2
+        markalert1 = cdi['CDI'] == 3
+        markalert2 = cdi['CDI'] == 4
+
+        lims = ax.get_ylim()
+        ax.fill_between(df.index, *[-4,4], where=markwatch, facecolor=C_WATCH, alpha=.2)
+        ax.fill_between(df.index, *[-4,4], where=markwarning, facecolor=C_WARNING, alpha=.2)
+        ax.fill_between(df.index, *[-4,4], where=markalert1, facecolor=C_ALERT1, alpha=.2)
+        ax.fill_between(df.index, *[-4,4], where=markalert2, facecolor=C_ALERT2, alpha=.2)
+
+        ax.set_ylim(lims)
+
+    elif not warning==0: 
         markwarning = df[warning_var] < warning
         lims = ax.get_ylim()
         ax.fill_between(df.index, *[-4,4], where=markwarning, facecolor='red', alpha=.2)
@@ -52,16 +72,7 @@ def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,w
     return fig, ax
 
 @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
-def create_indices():
-    # configure inputs
-    aa = config.AnalysisArgs(
-        latitude=52.5,
-        longitude=1.25,
-        start_date='20200101',
-        end_date='20221231',
-        product='SMA'
-    )
-    cf = config.Config(outdir= 'output')
+def load_indices(aa,cf):
 
     # Make sure everything is already downloaded else it'll take ages
     spi = dri.SPI(cf,aa)
@@ -70,16 +81,23 @@ def create_indices():
     fapar = dri.FPAR_EDO(cf,aa)
 
     spi.download()
-    sma.download()
+    #sma.download()
 
     df_spi = spi.process()
-    df_sma = sma.process()
+    df_sma = None#sma.process()
     df_sma_edo = sma_edo.process()
     df_fapar = fapar.process()
 
     swvl_fname = sma.swv_monthly_download.download_file_path
 
     return aa, df_spi, df_sma, df_sma_edo, df_fapar, swvl_fname
+
+@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
+def load_cdi(aa,cf):
+
+    cdi = dri.CDI(cf,aa)
+    cdi.download()
+    return cdi.process()
 
 @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
 def load_era_soilmoisture(fname):
@@ -109,9 +127,15 @@ def draw_map(aa):
         showlegend = False)
     return fig
 
-aa, df_spi, df_sma, df_sma_edo, df_fapar, swvl_fname = create_indices()
-ds_swvl = load_era_soilmoisture(swvl_fname)
-
+# configure inputs
+aa = config.AnalysisArgs(
+    latitude=52.5,
+    longitude=1.25,
+    start_date='20200101',
+    end_date='20221231',
+    product='SMA'
+)
+cf = config.Config(outdir= 'output')
 
 plot_options = {'SPI':False,
                 'Soil Water Vol. (ECMWF)':False,
@@ -121,12 +145,26 @@ plot_options = {'SPI':False,
 
 
 with st.sidebar:
-    st.write('Plots to show')
-    for itm in plot_options:
-        plot_options[itm] = st.checkbox(itm,key=itm)
-    print(plot_options)
-    sma_level = st.selectbox('Soil Water Indicator Level',['1','2','3','4'])
 
+    # Select view mode
+    view = st.radio('View mode', ['CDI Breakdown','Index Comparison'])
+
+    # COMPARE INDICES
+    if view == 'Index Comparison':
+        plot_cdi = False
+        aa, df_spi, df_sma, df_sma_edo, df_fapar, swvl_fname = load_indices(aa,cf)
+        ds_swvl = load_era_soilmoisture(swvl_fname)
+
+        st.header('Compare Indices:')
+        for itm in plot_options:
+            plot_options[itm] = st.checkbox(itm,key=itm)
+        print(plot_options)
+        sma_level = st.selectbox('Soil Water Indicator Level',['1','2','3','4'])
+
+    # CDI BREAKDOWN
+    elif view == 'CDI Breakdown':
+        cdi = load_cdi(aa,cf)
+        plot_cdi = True
 
 col1,col2 = st.columns(2)
 with col1:
@@ -134,24 +172,36 @@ with col1:
 
 figs = []
 
-if plot_options['SPI']:
-    fig, ax = plot(df_spi,['spi'],'Standardised Precipitation Index',warning=-1,warning_var='spi')
+if view == "Index Comparison":
+
+    if plot_options['SPI']:
+        fig, ax = plot(df_spi,['spi'],'Standardised Precipitation Index',warning=-1,warning_var='spi')
+        figs.append(fig)
+
+    if plot_options['Soil Water Vol. (ECMWF)']:
+        fig, ax = plot(ds_swvl,['swvl1','swvl2','swvl3','swvl4'],title='Soil Water Volume',showmean=True)
+        figs.append(fig)
+
+    if plot_options['SMA (ECMWF)']:
+        fig, ax = plot(df_sma,['zscore_swvl'+ str(n) for n in[1,2,3,4]],title='Soil Moisture Anomaly (ECMWF)',warning=-1,warning_var='zscore_swvl{}'.format(sma_level))
+        figs.append(fig)
+
+    if plot_options['SMA (EDO)']:
+        fig, ax = plot(df_sma_edo,['smant'],title='Ensemble Soil Moisture Anomaly (EDO)',warning=-1,warning_var='smant')
+        figs.append(fig)
+
+    if plot_options['fAPAR (EDO)']:
+        fig, ax = plot(df_fapar,['fpanv'],title='Fraction of Absorbed Photosynthetically Active Radiation',warning=-1,warning_var='fpanv')
+        figs.append(fig)
+
+elif view == "CDI Breakdown":
+    fig, ax = plot(cdi,['SPI'],title='SPI')
     figs.append(fig)
 
-if plot_options['Soil Water Vol. (ECMWF)']:
-    fig, ax = plot(ds_swvl,['swvl1','swvl2','swvl3','swvl4'],title='Soil Water Volume',showmean=True)
+    fig, ax = plot(cdi,['SMA'],title='SMA')
     figs.append(fig)
 
-if plot_options['SMA (ECMWF)']:
-    fig, ax = plot(df_sma,['zscore_swvl'+ str(n) for n in[1,2,3,4]],title='Soil Moisture Anomaly (ECMWF)',warning=-1,warning_var='zscore_swvl{}'.format(sma_level))
-    figs.append(fig)
-
-if plot_options['SMA (EDO)']:
-    fig, ax = plot(df_sma_edo,['smant'],title='Ensemble Soil Moisture Anomaly (EDO)',warning=-1,warning_var='smant')
-    figs.append(fig)
-
-if plot_options['fAPAR (EDO)']:
-    fig, ax = plot(df_fapar,['fpanv'],title='Fraction of Absorbed Photosynthetically Active Radiation',warning=-1,warning_var='fpanv')
+    fig, ax = plot(cdi,['fAPAR'],title='fAPAR')
     figs.append(fig)
 
 
