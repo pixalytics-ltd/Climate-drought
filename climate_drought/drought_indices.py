@@ -44,6 +44,9 @@ class DroughtIndex(ABC):
         self.logger = logging.getLogger("ERA5_Processing")
         self.logger.setLevel(logging.DEBUG) if config.verbose else self.logger.setLevel(logging.INFO)
 
+        # set data to empty df as an indicator that this hasn't been processed yet
+        self.data = pd.DataFrame()
+
     @property
     def output_file_path(self):
         """
@@ -82,7 +85,7 @@ class DroughtIndex(ABC):
             # Extract columns as properties
             property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
             parsed = json.loads(property)
-            print("Sam: ",parsed)
+            #print("Sam: ",parsed)
             feature['properties'] = parsed
 
             # Add feature
@@ -190,10 +193,10 @@ class SPI(DroughtIndex):
         super().__init__(config, args, 'spi')
         
         # create era5 request object
-        req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True)
+        request = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, start_date=config.baseline_start, end_date=config.baseline_end)
 
         # initialise the download object using the request, but don't download yet
-        self.spi_download = erq.ERA5Download(req,self.logger)
+        self.download_obj = erq.ERA5Download(request,self.logger)
 
     def download(self):
         """
@@ -202,13 +205,13 @@ class SPI(DroughtIndex):
         :output: list containing name of single generated netcdf file. Must be a list as other indices will return the paths to multiple netcdfs for baseline and short-term timespans.
         """
 
-        if os.path.exists(self.spi_download.download_file_path):
-            self.logger.info("Downloaded file '{}' already exists.".format(self.spi_download.download_file_path))
+        if os.path.exists(self.download_obj.download_file_path):
+            self.logger.info("Downloaded file '{}' already exists.".format(self.download_obj.download_file_path))
         else:
-            downloaded_file = self.spi_download.download()
+            downloaded_file = self.download_obj.download()
             self.logger.info("Downloading  for '{}' completed.".format(downloaded_file))
 
-        return [self.spi_download.download_file_path]
+        return [self.download_obj.download_file_path]
 
     def convert_precip_to_spi(self) -> None:
         """
@@ -219,7 +222,7 @@ class SPI(DroughtIndex):
         """
 
         # Extract data from NetCDF file
-        datxr = xr.open_dataset(self.spi_download.download_file_path)
+        datxr = xr.open_dataset(self.download_obj.download_file_path)
         self.logger.debug("Xarray:")
         self.logger.debug(datxr)
 
@@ -263,7 +266,7 @@ class SPI(DroughtIndex):
         """
         self.logger.info("Initiating processing of ERA5 daily data.")
 
-        if not os.path.isfile(self.spi_download.download_file_path):
+        if not os.path.isfile(self.download_obj.download_file_path):
             raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.spi_download.download_file_path))
         
         # Calculates SPI precipitation drought index
@@ -276,6 +279,9 @@ class SPI(DroughtIndex):
 
         if not os.path.isfile(self.output_file_path):
             self.generate_geojson(df_filtered)
+
+        # store processed data on object
+        self.data = df_filtered
 
         return df_filtered
     
@@ -293,13 +299,29 @@ class SMA_ECMWF(DroughtIndex):
         super().__init__(config,args,index_shortname='smecmwf')
         self.logger.debug("Initiated ERA5 daily processing of soil water.")
         
-        # initialise download objects
-        req_baseline = erq.ERA5Request(erq.SOILWATER_VARIABLES, 'soilwater', self.args, self.config, baseline=True)
-        self.swv_monthly_download = erq.ERA5Download(req_baseline, self.logger)
+        #initialise download objects
+        #long-term 'baseline' object to compute the mean
+        request_baseline = erq.ERA5Request(
+            erq.SOILWATER_VARIABLES,
+            'soilwater',
+            self.args,
+            self.config,
+            start_date=config.baseline_start,
+            end_date=config.baseline_end)
+        
+        self.download_obj_baseline = erq.ERA5Download(request_baseline, self.logger)
 
-        # create era5 request object for short term period
-        req_shorterm = erq.ERA5Request(erq.SOILWATER_VARIABLES, 'soilwater', self.args, self.config, baseline=False, monthly=False)
-        self.swv_hourly_download = erq.ERA5Download(req_shorterm, self.logger)
+        #create era5 request object for short term period
+        request_shorterm = erq.ERA5Request(
+            erq.SOILWATER_VARIABLES,
+            'soilwater',
+            self.args,
+            self.config,
+            args.start_date,
+            args.end_date,
+            monthly=False)
+        
+        self.download_obj_hourly = erq.ERA5Download(request_shorterm, self.logger)
     
     def download(self):
         """
@@ -314,10 +336,10 @@ class SMA_ECMWF(DroughtIndex):
                 self.logger.info("Downloading  for '{}' completed.".format(downloaded_file))
         
         # download baseline and monthly data
-        exists_or_download(self.swv_monthly_download)
-        exists_or_download(self.swv_monthly_download)
+        exists_or_download(self.download_obj_baseline)
+        exists_or_download(self.download_obj_hourly)
 
-        return [self.swv_monthly_download.download_file_path, self.swv_hourly_download.download_file_path]
+        return [self.download_obj_baseline.download_file_path, self.download_obj_hourly.download_file_path]
 
     def process(self) -> str:
         """
@@ -327,14 +349,18 @@ class SMA_ECMWF(DroughtIndex):
         """
         self.logger.info("Initiating processing of ERA5 soil water data.")
 
-        if not os.path.isfile(self.swv_monthly_download.download_file_path):
-            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.swv_monthly_download.download_file_path))
-        if not os.path.isfile(self.swv_hourly_download.download_file_path):
-            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.swv_hourly_download.download_file_path))
+        path_monthly = self.download_obj_baseline.download_file_path
+        path_hourly = self.download_obj_hourly.download_file_path
+
+        if not os.path.isfile(path_monthly):
+            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(path_monthly))
+        
+        if not os.path.isfile(path_hourly):
+            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(path_hourly))
 
         # Open netcdfs
-        monthly_swv = xr.open_dataset(self.swv_monthly_download.download_file_path)
-        hourly_swv = xr.open_dataset(self.swv_hourly_download.download_file_path).squeeze()
+        monthly_swv = xr.open_dataset(path_monthly)
+        hourly_swv = xr.open_dataset(path_hourly).squeeze()
 
         # Reduce monthly data to what's relevant
         monthly_swv = monthly_swv.isel(expver=0).drop_vars('expver').mean(('latitude','longitude'))
@@ -358,6 +384,8 @@ class SMA_ECMWF(DroughtIndex):
         self.generate_geojson(swv_dekads)
 
         self.logger.info("Completed processing of ERA5 soil water data.")
+
+        self.data = swv_dekads
 
         return swv_dekads
 
@@ -405,6 +433,8 @@ class SMA_EDO(DroughtIndex):
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
+        self.data = df
+
         return df
 
 class FPAR_EDO(DroughtIndex):
@@ -451,19 +481,23 @@ class FPAR_EDO(DroughtIndex):
 
         self.logger.info("Completed processing of ERA5 fAPAR data.")
 
+        self.data = df
+
         return df
 
 class CDI(DroughtIndex):
-    """
 
     """
-    def __init__(self, config: config.Config, args: config.AnalysisArgs):
+    Extension of base class for combined drought indicator
+    Can initialise from scratch or using existing index objects
+    """
+    def __init__(self, config: config.Config, args: config.AnalysisArgs, spi: SPI = None, sma: DroughtIndex = None, fpr: FPAR_EDO = None):
         super().__init__(config,args,index_shortname='cdi')
 
         # Initialise all separate indicators to be combined
-        self.spi = SPI(config,args)
-        self.sma = SMA_ECMWF(config,args) if args.sma_source=='ECMWF' else SMA_EDO(config,args)
-        self.fpr = FPAR_EDO(config,args)
+        self.spi = spi or SPI(config,args)
+        self.sma = sma or SMA_ECMWF(config,args) if args.sma_source=='ECMWF' else SMA_EDO(config,args)
+        self.fpr = fpr or FPAR_EDO(config,args)
 
     def download(self):
         self.spi.download()
@@ -489,8 +523,8 @@ class CDI(DroughtIndex):
         # Dekads for SMA and fAPAR
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
 
-        # ------ SPI ------
-        df_spi = self.spi.process()
+        # ------ SPI ------ :
+        df_spi = self.spi.process() if len(self.spi.data) == 0 else self.spi.data
         self.df_spi = df_spi
 
         # Convert to dekads for consistency with other timeseries
@@ -502,14 +536,14 @@ class CDI(DroughtIndex):
         self.spi_np = spi
         
         # ------ SMA ------
-        df_sma = self.sma.process()
+        df_sma = self.sma.process() if len(self.sma.data) == 0 else self.sma.data
 
         # Shift backwards by 2 dekads
         sma = shift_date(idx_np(df_sma),2)
         self.sma_np = sma
 
         # ------ fAPAR ------
-        df_fpr = self.fpr.process()
+        df_fpr = self.fpr.process() if len(self.fpr.data) == 0 else self.fpr.data
 
         # Shift backward by 1 dekad
         fpr = shift_date(idx_np(df_fpr),1)
@@ -549,3 +583,4 @@ class CDI(DroughtIndex):
         self.logger.info("Completed processing of ERA5 CDI data.")
 
         return df
+    

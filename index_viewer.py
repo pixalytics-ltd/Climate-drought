@@ -56,12 +56,14 @@ def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,w
         markalert2 = cdi['CDI'] == 4
 
         lims = ax.get_ylim()
-        ax.fill_between(df.index, *[-4,4], where=markwatch, facecolor=C_WATCH, alpha=.2)
-        ax.fill_between(df.index, *[-4,4], where=markwarning, facecolor=C_WARNING, alpha=.2)
-        ax.fill_between(df.index, *[-4,4], where=markalert1, facecolor=C_ALERT1, alpha=.2)
-        ax.fill_between(df.index, *[-4,4], where=markalert2, facecolor=C_ALERT2, alpha=.2)
+        h1 = ax.fill_between(df.index, *[-4,4], where=markwatch, facecolor=C_WATCH, alpha=.2)
+        h2 = ax.fill_between(df.index, *[-4,4], where=markwarning, facecolor=C_WARNING, alpha=.2)
+        h3 = ax.fill_between(df.index, *[-4,4], where=markalert1, facecolor=C_ALERT1, alpha=.2)
+        h4 = ax.fill_between(df.index, *[-4,4], where=markalert2, facecolor=C_ALERT2, alpha=.2)
 
         ax.set_ylim(lims)
+
+        ax.legend(handles=[h1,h2,h3,h4],labels=['Watch','Warning','Alert 1','Alert 2'])
 
     elif not warning==0: 
         markwarning = df[warning_var] < warning
@@ -76,27 +78,24 @@ def load_indices(aa,cf):
 
     # Make sure everything is already downloaded else it'll take ages
     spi = dri.SPI(cf,aa)
-    sma = dri.SMA_ECMWF(cf,aa)
+    sma_ecmwf = dri.SMA_ECMWF(cf,aa)
     sma_edo = dri.SMA_EDO(cf,aa)
     fapar = dri.FPAR_EDO(cf,aa)
 
     spi.download()
-    #sma.download()
+    sma_ecmwf.download()
 
-    df_spi = spi.process()
-    df_sma = None#sma.process()
-    df_sma_edo = sma_edo.process()
-    df_fapar = fapar.process()
+    spi.process()
+    sma_ecmwf.process()
+    sma_edo.process()
+    fapar.process()
 
-    swvl_fname = sma.swv_monthly_download.download_file_path
-
-    return aa, df_spi, df_sma, df_sma_edo, df_fapar, swvl_fname
+    return spi, sma_ecmwf, sma_edo, fapar
 
 @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
-def load_cdi(aa,cf):
+def load_cdi(aa,cf,spi,sma,fpr):
 
-    cdi = dri.CDI(cf,aa)
-    cdi.download()
+    cdi = dri.CDI(cf,aa,spi=spi,sma=sma,fpr=fpr)
     return cdi.process()
 
 @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
@@ -143,7 +142,8 @@ plot_options = {'SPI':False,
                 'SMA (EDO)':False,
                 'fAPAR (EDO)': False}
 
-
+# load data upfront
+spi, sma_ecmwf, sma_edo, fpr = load_indices(aa,cf)
 with st.sidebar:
 
     # Select view mode
@@ -152,8 +152,11 @@ with st.sidebar:
     # COMPARE INDICES
     if view == 'Index Comparison':
         plot_cdi = False
-        aa, df_spi, df_sma, df_sma_edo, df_fapar, swvl_fname = load_indices(aa,cf)
-        ds_swvl = load_era_soilmoisture(swvl_fname)
+        df_spi = spi.data
+        df_sma_ecmwf = sma_ecmwf.data
+        df_sma_edo = sma_edo.data
+        df_fpr = fpr.data
+        ds_swvl = load_era_soilmoisture(sma_ecmwf.download_obj_baseline.download_file_path)
 
         st.header('Compare Indices:')
         for itm in plot_options:
@@ -163,7 +166,7 @@ with st.sidebar:
 
     # CDI BREAKDOWN
     elif view == 'CDI Breakdown':
-        cdi = load_cdi(aa,cf)
+        cdi = load_cdi(aa,cf,spi,sma_edo,fpr)
         plot_cdi = True
 
 col1,col2 = st.columns(2)
@@ -183,7 +186,7 @@ if view == "Index Comparison":
         figs.append(fig)
 
     if plot_options['SMA (ECMWF)']:
-        fig, ax = plot(df_sma,['zscore_swvl'+ str(n) for n in[1,2,3,4]],title='Soil Moisture Anomaly (ECMWF)',warning=-1,warning_var='zscore_swvl{}'.format(sma_level))
+        fig, ax = plot(df_sma_ecmwf,['zscore_swvl'+ str(n) for n in[1,2,3,4]],title='Soil Moisture Anomaly (ECMWF)',warning=-1,warning_var='zscore_swvl{}'.format(sma_level))
         figs.append(fig)
 
     if plot_options['SMA (EDO)']:
@@ -191,7 +194,7 @@ if view == "Index Comparison":
         figs.append(fig)
 
     if plot_options['fAPAR (EDO)']:
-        fig, ax = plot(df_fapar,['fpanv'],title='Fraction of Absorbed Photosynthetically Active Radiation',warning=-1,warning_var='fpanv')
+        fig, ax = plot(df_fpr,['fpanv'],title='Fraction of Absorbed Photosynthetically Active Radiation',warning=-1,warning_var='fpanv')
         figs.append(fig)
 
 elif view == "CDI Breakdown":

@@ -22,16 +22,16 @@ class ERA5Request():
     - baseline = True: a monthly mean over a long time perid to form the mean or baseline against which anomalies can be computed
     - baseline = False: a monthly or hourly value to retreive data over shorter timescales
     """
-    def __init__(self, variables, fname_out, args: config.AnalysisArgs, config: config.Config, baseline=False, monthly=True):
+    def __init__(self, variables, fname_out, args: config.AnalysisArgs, config: config.Config, start_date, end_date, monthly=True):
         self.latitude = args.latitude
         self.longitude = args.longitude
-        self.start_date = config.baseline_start if baseline else args.start_date
-        self.end_date = config.baseline_end if baseline else args.end_date
+        self.start_date = start_date
+        self.end_date = end_date
         self.variables = variables
         self.working_dir = config.outdir
         self.fname_out = fname_out
         self.verbose = config.verbose
-        self.monthly = baseline or monthly
+        self.monthly = monthly
 
 class ERA5Download():
     """
