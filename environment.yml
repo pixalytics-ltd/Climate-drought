@@ -13,10 +13,17 @@ dependencies:
   - plotly
   - pip:
     - cdsapi
+    - dask[distributed]
+    - fsspec
     - geojson
+    - h5py
+    - jupyter-server-proxy
+    - kerchunk
     - netcdf4
     - numba
     - pygeometa
+    - python-snappy
+    - s3fs
     - scipy
     - sentinelsat
 prefix: ~/anaconda3/envs/climate_env

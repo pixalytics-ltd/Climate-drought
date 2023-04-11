@@ -269,7 +269,7 @@ class SPI(DroughtIndex):
         super().__init__(config, args, 'spi')
         
         # create era5 request object
-        req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True)
+        req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True, aws=True)
 
         # initialise the download object using the request, but don't download yet
         self.spi_download = erq.ERA5Download(req,self.logger)
@@ -278,7 +278,7 @@ class SPI(DroughtIndex):
 
     def download(self):
         """
-        Download requried data from ERA5 portal using the imported ERA5 request module.
+        Download required data from ERA5 portal using the imported ERA5 request module.
         The processing part of the SPI calculation requires that the long term dataset is passed in at the same time as the short term analysis period therefore we must request the whole baseline period for this analysis.
         :output: list containing name of single generated netcdf file. Must be a list as other indices will return the paths to multiple netcdfs for baseline and short-term timespans.
         """
@@ -341,12 +341,6 @@ class SPI(DroughtIndex):
         self.logger.debug("Updated DF: ")
         self.logger.debug(df_filtered.head())
 
-        covjson = True
-        if covjson: # Generate CoverageJSON file
-            self.generate_covjson()
-        else: # Generate GeoJSON
-            self.generate_geojson()
-
         return df_filtered
     
 
@@ -363,9 +357,15 @@ class SPI(DroughtIndex):
         
         # Calculates SPI precipitation drought index
         df_filtered = self.convert_precip_to_spi()
-        self.generate_geojson(df_filtered)
 
-        return df_filtered
+        # Save JSON file
+        covjson = False
+        if covjson: # Generate CoverageJSON file
+            self.generate_covjson(df_filtered)
+        else: # Generate GeoJSON
+            self.generate_geojson(df_filtered)
+
+        return self.output_file_path
     
 class SoilMoisture(DroughtIndex):
     """

@@ -31,7 +31,7 @@ class DROUGHT:
     def __init__(self,args):
 
         # Transfer args
-        self.config = config.Config(args.outdir,args.verbose)
+        self.config = config.Config(args.outdir,verbose=args.verbose,aws=args.aws)
         self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date,args.product)
 
         # Setup logging
@@ -90,10 +90,10 @@ def main():
         default=False,
     )
     parser.add_argument("-A", "--accum", action="store_true", default=False, help="Accumulation - not set from cammand line")
+    parser.add_argument("-AWS", "--aws", action="store_true", default=False, help="Download from AWS rather than CDS for SPI")
     parser.add_argument("-y", "--latitude", type=float, dest="latitude")
     parser.add_argument("-x", "--longitude", type=float, dest="longitude")
     parser.add_argument("-p", "--product", type=str, dest="product", default='none')
-    parser.add_argument("-P", "--plot", action="store_true", default=False, help="Create plot for diagnostics")
     parser.add_argument("-t", "--type", type=str, dest="type", default='none')
     parser.add_argument("-s", "--sdate", type=str, dest="start_date", default='none', help="Start date as YYYYMMDD")
     parser.add_argument("-e", "--edate", type=str, dest="end_date", default='none', help="End date as YYYYMMDD")
