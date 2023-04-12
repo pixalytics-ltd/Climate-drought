@@ -120,7 +120,6 @@ class ERA5Download():
         else:
             times = [self.SAMPLE_TIME]
 
-        print("Sam: ",self.req.monthly,self.req.variables[0])
         if self.req.monthly and 'precip' in self.req.variables[0]:
             self._download_aws_data(area=area_box,
                                     out_file=self.download_file_path)
@@ -225,15 +224,15 @@ class ERA5Download():
                     mode="rb", anon=True, default_fill_cache=False,
                     default_cache_type="none"
                 )
-                yr = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(u))))
-                mnth = os.path.basename(os.path.dirname(os.path.dirname(u)))
+                dirlist = os.path.dirname(os.path.dirname(u))
+                mnth = os.path.basename(dirlist)
+                yr = os.path.basename(os.path.dirname(dirlist))
                 jfile = os.path.join(jdir,"{}-{}-aws-precip.json".format(yr,mnth))
                 if not os.path.exists(jfile):
                     with fsspec.open(u, **so) as inf:
                         h5chunks = SingleHdf5ToZarr(inf, u, inline_threshold=300)
                         with open(jfile, 'wb') as outf:
                             outf.write(ujson.dumps(h5chunks.translate()).encode())
-                    json_list.append[jfile]
                 #else:
                 #    print("{} exists".format(jfile))
 
