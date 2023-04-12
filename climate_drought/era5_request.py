@@ -28,7 +28,7 @@ PRECIP_VARIABLES = ['total_precipitation']
 SOILWATER_VARIABLES = ["volumetric_soil_water_layer_1","volumetric_soil_water_layer_2","volumetric_soil_water_layer_3","volumetric_soil_water_layer_4"]
 
 AWSKEY = os.path.join(expanduser('~'), '.aws_api_key')
-AWS_PRECIP_VARIABLES = ['precipitation_amount_1hour_Accumulation']
+AWS_PRECIP_VARIABLE = ['precipitation_amount_1hour_Accumulation']
 
 class ERA5Request():
     """
@@ -122,12 +122,9 @@ class ERA5Download():
 
         print("Sam: ",self.req.monthly,self.req.variables[0])
         if self.req.monthly and 'precip' in self.req.variables[0]:
-
             self._download_aws_data(area=area_box,
-                                     out_file=self.download_file_path)
+                                    out_file=self.download_file_path)
         else:
-            sys.exit(1)
-
             self._download_era5_data(variables=self.req.variables,
                                      dates=self.dates,
                                      times=times,
@@ -191,11 +188,11 @@ class ERA5Download():
         outfile_exists = False
 
         if not os.path.exists(out_file):
-            self.logger.info("Downloading ERA data for {} {} for {:.3f}:{:.3f} {:.3f}:{:.3f}".format(self.req.start_date, self.req.end_date, float(area[2]), float(area[0]), float(area[1]), float(area[3])))
+            self.logger.info("Downloading ERA data for {} {} for {}".format(self.req.start_date, self.req.end_date, area))
 
             # Get list of AWS files
             fs = fsspec.filesystem('s3', anon=True)
-            years = list(np.arange(int(self.req.start_date[0:4]), int(self.req.start_date[0:4])+1, 1))
+            years = list(np.arange(int(self.req.start_date[0:4]), int(self.req.end_date[0:4])+1, 1))
             months = list(np.arange(1,12+1,1))
 
             urls = []
@@ -206,7 +203,7 @@ class ERA5Download():
                     else:
                         mnth = month
 
-                    s3file = "s3://era5-pds/{}/{}/data/{}.nc".format(year,mnth,AWS_PRECIP_VARIABLES[0])
+                    s3file = "s3://era5-pds/{}/{}/data/{}.nc".format(year,mnth,AWS_PRECIP_VARIABLE[0])
                     url = fs.glob(s3file)
                     # Check the file exists online
                     if len(url) > 0:
@@ -236,14 +233,17 @@ class ERA5Download():
                         h5chunks = SingleHdf5ToZarr(inf, u, inline_threshold=300)
                         with open(jfile, 'wb') as outf:
                             outf.write(ujson.dumps(h5chunks.translate()).encode())
-                else:
-                    print("{} exists".format(jfile))
+                    json_list.append[jfile]
+                #else:
+                #    print("{} exists".format(jfile))
 
             dask.compute(*[dask.delayed(gen_json)(u, jdir) for u in urls])
 
             # Generate json list
-            json_list = sorted(glob.glob(os.path.join(jdir,"*.json")))
-            self.logger.info("Generated {} JSON files".format(len(json_list)))
+            json_list = sorted(glob.glob(os.path.join(jdir,"*precip.json")))
+            json_list.sort() # Sort into numerical order
+            jlen = len(json_list)
+            self.logger.info("Generated {} JSON files {} to {}".format(jlen, os.path.basename(json_list[0]), os.path.basename(json_list[-1])))
 
             # Make combined JSON file
             mzz = MultiZarrToZarr(
@@ -256,7 +256,7 @@ class ERA5Download():
             cfile = os.path.join(jdir,'combined.json')
             mzz.translate(cfile)
 
-            # Convert into xarray
+            # Import JSON into xarray
             fs = fsspec.filesystem(
                 "reference",
                 fo=cfile,
@@ -266,15 +266,25 @@ class ERA5Download():
             )
             m = fs.get_mapper("")
             ds = xr.open_dataset(m, engine='zarr')
-            print(ds)
 
-            # Spatially subset - adjust lon range to 0 to 360
-            lonmin = float(area[1])
-            lonmax = float(area[3])
-            nlonmin = lonmin + 180
-            nlonmax = lonmax + 180
-            self.logger.info("Longitude conversion {:.3f}:{:.3f} {:.3f}:{:.3f}".format(lonmin, lonmax, nlonmin, nlonmax))
-            ds_subset = ds.sel(lat=slice(float(area[2]),float(area[0])), lon=slice(nlonmin,nlonmax))
+            # Prepare to extract lat/lon subset
+            ds = ds.drop_vars('time1_bounds')
+            self.logger.info(ds)
+
+            # Extract point time-series dataset
+            minlat = float(area[2])
+            maxlat = float(area[0])
+            ## Change Latitude to 0 to 360 from -180 to 180
+            minlon = float(area[1])+180.0
+            maxlon = float(area[3])+180.0
+            self.logger.info("Extraction range, Lat: {:.3f} {:.3f} Lon: {:.3f} {:.3f}".format(minlat,maxlat,minlon,maxlon))
+            mask_lon = (ds.lon >= minlon) & (ds.lon <= maxlon)
+            mask_lat = (ds.lat >= minlat) & (ds.lat <= maxlat)
+            ds_subset = ds.where(mask_lon & mask_lat, drop=True)
+
+            # Rename variable names
+            ds_subset = ds_subset.rename({'lon': 'longitude','lat': 'latitude',AWS_PRECIP_VARIABLE[0]:'tp'})
+            self.logger.info(ds_subset)
 
             # Write to NetCDF
             ds_subset.to_netcdf(out_file)

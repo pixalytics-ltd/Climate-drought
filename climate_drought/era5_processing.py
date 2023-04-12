@@ -311,7 +311,10 @@ class SPI(DroughtIndex):
         resamp = datxr.tp.max(['latitude', 'longitude']).load()
         #else:
         #resamp = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
-        precip = resamp[:, 0]
+        if not self.config.aws:
+            precip = resamp[:, 0]
+        else:
+            precip = resamp.copy()
 
         self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(precip.values), np.nanmin(precip.values), np.nanmax(precip.values)))
 
@@ -319,7 +322,8 @@ class SPI(DroughtIndex):
         spi = indices.INDICES()
         spi_vals = spi.calc_spi(np.array(precip.values).flatten())
         self.logger.info("SPI, {} values: {:.3f} {:.3f}".format(len(spi_vals), np.nanmin(spi_vals),np.nanmax(spi_vals)))
-        resamp = resamp.sel(expver=1, drop=True)
+        if not self.config.aws:
+            resamp = resamp.sel(expver=1, drop=True)
 
         # Convert xarray to dataframe Series and add SPI
         df = resamp.to_dataframe()
