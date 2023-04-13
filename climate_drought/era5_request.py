@@ -1,7 +1,6 @@
 import logging
 import os
 from os.path import expanduser
-import glob
 from typing import List
 from datetime import date, time
 import numpy as np
@@ -19,6 +18,7 @@ import fsspec
 import pathlib
 import s3fs
 import ujson
+import zarr
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -108,10 +108,10 @@ class ERA5Download():
         # Setup area of interest extraction
         boxsz = 0.1
         area_box = []
-        area_box.append(float(self.req.latitude) + boxsz)
-        area_box.append(float(self.req.longitude) - boxsz)
-        area_box.append(float(self.req.latitude) - boxsz)
-        area_box.append(float(self.req.longitude) + boxsz)
+        area_box.append(round(float(self.req.latitude) + boxsz,2))
+        area_box.append(round(float(self.req.longitude) - boxsz,2))
+        area_box.append(round(float(self.req.latitude) - boxsz,2))
+        area_box.append(round(float(self.req.longitude) + boxsz,2))
 
         if not self.req.monthly:
             times = []
@@ -174,7 +174,7 @@ class ERA5Download():
         
         return outfile_exists
 
-    # Created with reference to https://github.com/planet-os/notebooks/blob/master/api-examples/ERA5_tutorial.ipynb
+    # Created with reference to https://medium.com/pangeo/fake-it-until-you-make-it-reading-goes-netcdf4-data-on-aws-s3-as-zarr-for-rapid-data-access-61e33f8fe685
     def _download_aws_data(self, area: str, out_file: str) -> bool:
 
         """
@@ -202,6 +202,7 @@ class ERA5Download():
                     else:
                         mnth = month
 
+                    # ERA5-pds is located in us-west-2 and so depending on where this computation is taking place the time taken can vary dramatically.
                     s3file = "s3://era5-pds/{}/{}/data/{}.nc".format(year,mnth,AWS_PRECIP_VARIABLE[0])
                     url = fs.glob(s3file)
                     # Check the file exists online
@@ -210,20 +211,21 @@ class ERA5Download():
 
             self.logger.info("Example S3 URL: {}".format(urls[0]))
 
-            # Start a Dask client
-            client = Client(n_workers=8)
-            client
-
             # Create path for generated JSON files
             jdir = os.path.join(self.req.working_dir,'jsons')
             pathlib.Path(jdir).mkdir(exist_ok=True)
 
             # Extract JSON files
-            def gen_json(u, jdir):
-                so = dict(
-                    mode="rb", anon=True, default_fill_cache=False,
-                    default_cache_type="none"
-                )
+            ## default_fill_cache=False avoids caching data in between file chunks to lower memory usage
+            so = dict(
+                mode="rb", anon=True, default_fill_cache=False,
+                default_cache_type="none"
+            )
+            fs2 = fsspec.filesystem('')
+
+            # inline_threshold adjusts the Size below which binary blocks are included directly in the output
+            # a higher value can result in a larger json file but faster loading time
+            def gen_json(u):
                 dirlist = os.path.dirname(os.path.dirname(u))
                 mnth = os.path.basename(dirlist)
                 yr = os.path.basename(os.path.dirname(dirlist))
@@ -231,12 +233,28 @@ class ERA5Download():
                 if not os.path.exists(jfile):
                     with fsspec.open(u, **so) as inf:
                         h5chunks = SingleHdf5ToZarr(inf, u, inline_threshold=300)
-                        with open(jfile, 'wb') as outf:
+                        with fs2.open(jfile, 'wb') as outf:
                             outf.write(ujson.dumps(h5chunks.translate()).encode())
-                #else:
-                #    print("{} exists".format(jfile))
 
-            dask.compute(*[dask.delayed(gen_json)(u, jdir) for u in urls])
+            serial = True
+            if serial:
+                for u in urls:
+                    gen_json(u)
+            else:
+                # Start a Dask client
+                client = Client(n_workers=8)
+                client
+                dask.compute(*[dask.delayed(gen_json)(u) for u in urls])
+
+            def modify_fill_value(out):
+                out_ = zarr.open(out)
+                out_.lon.fill_value = -999
+                out_.lat.fill_value = -999
+                return out
+
+            def postprocess(out):
+                out = modify_fill_value(out)
+                return out
 
             # Make JSON yearly files
             year_jlist = []
@@ -244,28 +262,35 @@ class ERA5Download():
                 jfile = os.path.join(jdir, '{}-combined.json'.format(year))
                 if not os.path.exists(jfile):
                     # Generate json list
-                    jlist = sorted(glob.glob(os.path.join(jdir, "{}*precip.json".format(year))))
+                    jlist = fs2.glob(os.path.join(jdir, "{}*precip.json".format(year)))
                     jlist.sort()  # Sort into numerical order
                     jlen = len(jlist)
                     self.logger.info("Generated {} JSON files {} to {}".format(jlen, os.path.basename(jlist[0]),
                                                                                os.path.basename(jlist[-1])))
-
                     mzz = MultiZarrToZarr(
                         jlist,
                         remote_protocol="s3",
                         remote_options={'anon': True},
-                        concat_dims='time1',
-                        inline_threshold=0
+                        concat_dims=['time1'],
+                        identical_dims=['lat', 'lon'],
+                        #inline_threshold=0,
+                        postprocess=postprocess # 0 lon to Nan is as a result of no fill_value being assigned
                     )
-                    mzz.translate(jfile)
+                    d = mzz.translate()
+                    with fs2.open(jfile, 'wb') as f:
+                        f.write(ujson.dumps(d).encode())
+
                 year_jlist.append(jfile)
 
             # Make combined JSON file
+            ## Concatenate along a specified dimension using the concat_dims argument
+            ## Specifying the identical coordinate across the files using the identical_dims argument is not strictly necessary but will speed up computation times.
             mzz = MultiZarrToZarr(
                 year_jlist,
                 remote_protocol="s3",
                 remote_options={'anon': True},
-                concat_dims='time1',
+                concat_dims=['time1'],
+                identical_dims=['lat', 'lon'],
                 inline_threshold=0
             )
             cfile = os.path.join(jdir,'combined.json')
@@ -280,6 +305,8 @@ class ERA5Download():
                 skip_instance_cache=True
             )
             m = fs.get_mapper("")
+            backend_args = {"consolidated": False,
+                            "storage_options": {"fo": d, "remote_protocol": "s3", "remote_options": {"anon": True}}}
             ds = xr.open_dataset(m, engine='zarr')
 
             # Prepare to extract lat/lon subset
