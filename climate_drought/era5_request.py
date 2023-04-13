@@ -238,15 +238,31 @@ class ERA5Download():
 
             dask.compute(*[dask.delayed(gen_json)(u, jdir) for u in urls])
 
-            # Generate json list
-            json_list = sorted(glob.glob(os.path.join(jdir,"*precip.json")))
-            json_list.sort() # Sort into numerical order
-            jlen = len(json_list)
-            self.logger.info("Generated {} JSON files {} to {}".format(jlen, os.path.basename(json_list[0]), os.path.basename(json_list[-1])))
+            # Make JSON yearly files
+            year_jlist = []
+            for year in years:
+                jfile = os.path.join(jdir, '{}-combined.json'.format(year))
+                if not os.path.exists(jfile):
+                    # Generate json list
+                    jlist = sorted(glob.glob(os.path.join(jdir, "{}*precip.json".format(year))))
+                    jlist.sort()  # Sort into numerical order
+                    jlen = len(jlist)
+                    self.logger.info("Generated {} JSON files {} to {}".format(jlen, os.path.basename(jlist[0]),
+                                                                               os.path.basename(jlist[-1])))
+
+                    mzz = MultiZarrToZarr(
+                        jlist,
+                        remote_protocol="s3",
+                        remote_options={'anon': True},
+                        concat_dims='time1',
+                        inline_threshold=0
+                    )
+                    mzz.translate(jfile)
+                year_jlist.append(jfile)
 
             # Make combined JSON file
             mzz = MultiZarrToZarr(
-                json_list,
+                year_jlist,
                 remote_protocol="s3",
                 remote_options={'anon': True},
                 concat_dims='time1',

@@ -6,12 +6,6 @@ import xarray as xr
 # JSON export
 import json
 import geojson
-import orjson
-from covjson_pydantic.reference_system import ReferenceSystem
-from covjson_pydantic.domain import Domain
-from covjson_pydantic.ndarray import NdArray
-from covjson_pydantic.coverage import Coverage
-from covjson_pydantic.parameter import Parameter, ParameterGroup
 
 # Drought indices calculator
 from climate_drought import indices, config, utils, era5_request as erq
