@@ -202,6 +202,7 @@ class ERA5Download():
             # Get list of AWS files
             fs = fsspec.filesystem('s3', anon=True)
             sdate = int(self.req.start_date[0:4])
+            # TODO SL Can we fix for later dates?
             edate = 2020  # int(self.req.end_date[0:4])+1
             years = list(np.arange(sdate, 2020, 1))
             self.logger.warning("AWS range restricted to {} to 2020 as the files after cause issues".format(sdate))
@@ -222,7 +223,7 @@ class ERA5Download():
                     if len(url) > 0:
                         urls.append(s3file)
 
-            self.logger.info("Example S3 URL: {}".format(urls[0]))
+            self.logger.debug("Example S3 URL: {}".format(urls[0]))
 
             # Create path for generated JSON files
             jdir = os.path.join(self.req.working_dir, 'jsons')
@@ -278,7 +279,7 @@ class ERA5Download():
                     jlist = fs2.glob(os.path.join(jdir, "{}*precip.json".format(year)))
                     jlist.sort()  # Sort into numerical order
                     jlen = len(jlist)
-                    self.logger.info("Generated {} JSON files {} to {}".format(jlen, os.path.basename(jlist[0]),
+                    self.logger.debug("Generated {} JSON files {} to {}".format(jlen, os.path.basename(jlist[0]),
                                                                                os.path.basename(jlist[-1])))
                     mzz = MultiZarrToZarr(
                         jlist,
@@ -323,7 +324,7 @@ class ERA5Download():
 
             # Prepare to extract lat/lon subset
             ds = ds.drop_vars('time1_bounds')
-            self.logger.info(ds)
+            self.logger.debug(ds)
 
             # Extract point time-series dataset
             minlat = float(area[2])
@@ -338,8 +339,8 @@ class ERA5Download():
             ds_subset = ds.where(mask_lon & mask_lat, drop=True)
 
             # Rename variable names
-            ds_subset = ds_subset.rename({'lon': 'longitude', 'lat': 'latitude', AWS_PRECIP_VARIABLE[0]: 'tp'})
-            self.logger.info(ds_subset)
+            ds_subset = ds_subset.rename({'lon': 'longitude', 'lat': 'latitude', AWS_PRECIP_VARIABLE[0]: 'tp', 'time1': 'time'})
+            self.logger.debug(ds_subset)
 
             # Write to NetCDF
             ds_subset.to_netcdf(out_file)

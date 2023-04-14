@@ -305,10 +305,11 @@ class SPI(DroughtIndex):
         resamp = datxr.tp.max(['latitude', 'longitude']).load()
         #else:
         #resamp = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
-        if not self.config.aws:
-            precip = resamp[:, 0]
+        if self.config.aws:
+            # TODO AWS is hourly, so accumulate to monthly for now
+            precip = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
         else:
-            precip = resamp.copy()
+            precip = resamp[:, 0]
 
         self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(precip.values), np.nanmin(precip.values), np.nanmax(precip.values)))
 
