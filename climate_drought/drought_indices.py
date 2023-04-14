@@ -18,7 +18,7 @@ from pygeometa.core import read_mcf
 from pygeometa.schemas.ogcapi_records import OGCAPIRecordOutputSchema
 
 from abc import ABC, abstractclassmethod
-from typing import List
+from typing import List, Union
 
 # Logging
 
@@ -491,7 +491,14 @@ class CDI(DroughtIndex):
     Extension of base class for combined drought indicator
     Can initialise from scratch or using existing index objects
     """
-    def __init__(self, config: config.Config, args: config.AnalysisArgs, spi: SPI = None, sma: DroughtIndex = None, fpr: FPAR_EDO = None):
+    def __init__(
+            self,
+            config: config.Config,
+            args: config.AnalysisArgs,
+            spi: SPI = None,
+            sma: Union[SMA_ECMWF,SMA_EDO] = None,
+            fpr: FPAR_EDO = None
+            ):
         super().__init__(config,args,index_shortname='cdi')
 
         # Initialise all separate indicators to be combined

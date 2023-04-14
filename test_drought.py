@@ -18,7 +18,8 @@ INDEX_MAP = {
     'SPI': dri.SPI,
     'SMA_ECMWF': dri.SMA_ECMWF,
     'SMA_EDO': dri.SMA_EDO,
-    'fAPAR': dri.FPAR_EDO
+    'fAPAR': dri.FPAR_EDO,
+    'CDI': dri.CDI
 }
 
 class DROUGHT:
