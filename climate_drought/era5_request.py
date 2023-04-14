@@ -250,7 +250,7 @@ class ERA5Download():
                         with fs2.open(jfile, 'wb') as outf:
                             outf.write(ujson.dumps(h5chunks.translate()).encode())
 
-            serial = True
+            serial = False
             if serial:
                 for u in urls:
                     gen_json(u)
