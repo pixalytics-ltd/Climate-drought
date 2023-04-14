@@ -13,6 +13,7 @@ dependencies:
   - plotly
   - pip:
     - cdsapi
+    - covjson-pydantic
     - dask[distributed]
     - fsspec
     - geojson

@@ -95,6 +95,7 @@ class DroughtIndex(ABC):
         with open(self.output_file_path, "w", encoding='utf-8') as outfile:
             geojson.dump(json_x, outfile, indent=4)
 
+    # TODO SL draft implementation for precipitation
     def generate_covjson(self, df_filtered) -> None:
         """
          Generates CoverageJSON file for data
@@ -307,7 +308,8 @@ class SPI(DroughtIndex):
         #resamp = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
         if self.config.aws:
             # TODO AWS is hourly, so accumulate to monthly for now
-            precip = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
+            resamp = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
+            precip = resamp.copy()
         else:
             precip = resamp[:, 0]
 
@@ -328,7 +330,7 @@ class SPI(DroughtIndex):
         self.logger.debug(df.head())
 
         # Select requested time slice
-        self.logger.debug("Filtering between {} and {}".format(self.args.start_date, self.args.end_date))
+        self.logger.debug('Filtering between {} and {}'.format(self.args.start_date, self.args.end_date))
         self.logger.debug("Index: {}".format(df.index[0]))
         df_filtered = df.loc[(df.index >= self.args.start_date) & (df.index <= self.args.end_date)]
 
@@ -358,6 +360,7 @@ class SPI(DroughtIndex):
         df_filtered = self.convert_precip_to_spi()
 
         # Save JSON file
+        ## TODO SL to finish implementation of CoverageJSON so can be chosen option
         covjson = False
         if covjson: # Generate CoverageJSON file
             self.generate_covjson(df_filtered)
