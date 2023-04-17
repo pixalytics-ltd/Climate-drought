@@ -17,8 +17,8 @@ logging.basicConfig(level=logging.INFO)
 INDEX_MAP = {
     'SPI': dri.SPI,
     'SMA_ECMWF': dri.SMA_ECMWF,
-    'SMA_EDO': dri.SMA_EDO,
-    'fAPAR': dri.FPAR_EDO,
+    'SMA_GDO': dri.SMA_GDO,
+    'fAPAR': dri.FPAR_GDO,
     'CDI': dri.CDI
 }
 
@@ -34,8 +34,13 @@ class DROUGHT:
     def __init__(self,args):
 
         # Transfer args
+        self.product = args.product
         self.config = config.Config(args.outdir,args.indir,args.verbose)
-        self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date,args.product)
+
+        if args.product == 'CDI':
+            self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date, args.sma_source)
+        else:
+            self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date)
 
         # Setup logging
         self.logger = logging.getLogger("test_drought")
@@ -47,13 +52,12 @@ class DROUGHT:
 
     @property
     def index(self) -> dri.DroughtIndex:
-        print(self.config.indir)
-        return INDEX_MAP[self.args.index](self.config, self.args)
+        return INDEX_MAP[self.product](self.config, self.args)
 
 
     def run_index(self):
 
-        self.logger.debug("Computing {idx} index for {sd} to {ed}.".format(idx=self.args.index, sd=self.config.baseline_start, ed=self.config.baseline_end))
+        self.logger.debug("Computing {idx} index for {sd} to {ed}.".format(idx=self.product, sd=self.config.baseline_start, ed=self.config.baseline_end))
 
         exit_code = 0
 
@@ -68,7 +72,7 @@ class DROUGHT:
 
         if os.path.exists(idx.output_file_path):
             exit_code = 1
-            self.logger.info("{} processing complete".format(self.args.index))
+            self.logger.info("{} processing complete".format(self.index))
 
         self.logger.info("Processing complete")
 
@@ -82,7 +86,7 @@ def main():
         "--outdir",
         type=str,
         dest="outdir",
-        default=True,
+        default='output',
         help="Output data folder",
     )
     parser.add_argument(
@@ -101,13 +105,15 @@ def main():
         default=False,
     )
     parser.add_argument("-A", "--accum", action="store_true", default=False, help="Accumulation - not set from cammand line")
-    parser.add_argument("-y", "--latitude", type=float, dest="latitude")
-    parser.add_argument("-x", "--longitude", type=float, dest="longitude")
-    parser.add_argument("-p", "--product", type=str, dest="product", default='none')
+    parser.add_argument("-y", "--latitude", type=float, dest="latitude", default=52.5)
+    parser.add_argument("-x", "--longitude", type=float, dest="longitude", default=1.25)
+    parser.add_argument("-p", "--product", type=str, dest="product", default='SPI')
     parser.add_argument("-P", "--plot", action="store_true", default=False, help="Create plot for diagnostics")
     parser.add_argument("-t", "--type", type=str, dest="type", default='none')
-    parser.add_argument("-s", "--sdate", type=str, dest="start_date", default='none', help="Start date as YYYYMMDD")
-    parser.add_argument("-e", "--edate", type=str, dest="end_date", default='none', help="End date as YYYYMMDD")
+    parser.add_argument("-s", "--sdate", type=str, dest="start_date", default='20200116', help="Start date as YYYYMMDD")
+    parser.add_argument("-e", "--edate", type=str, dest="end_date", default='20200410', help="End date as YYYYMMDD")
+    parser.add_argument("-S", "--smasrc", type=str, dest="sma_source", default='EDO', help="'EDO' or 'ECMWF")
+
 
     # define arguments
     args = parser.parse_args()
