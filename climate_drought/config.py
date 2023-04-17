@@ -1,10 +1,13 @@
 class AnalysisArgs():
-    def __init__(self, latitude, longitude, start_date, end_date, product, sma_source = 'EDO'):
+    def __init__(self, latitude, longitude, start_date, end_date):
         self.latitude = latitude
         self.longitude = longitude
         self.start_date = start_date
         self.end_date = end_date
-        self.index = product
+
+class CDIArgs(AnalysisArgs):
+    def __init__(self, latitude, longitude, start_date, end_date, sma_source='EDO'):
+        super().__init__(latitude, longitude, start_date, end_date)
         self.sma_source = sma_source
 
 class Config():
