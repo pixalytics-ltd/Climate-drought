@@ -71,9 +71,21 @@ def fill_gaps(index, df: pd.DataFrame) -> pd.DataFrame:
     gaps = index[~index.isin(df.index)]
     if len(gaps) > 0:
         df_gaps = pd.DataFrame(index=gaps)
-        return pd.concat([df,df_gaps])
+        return pd.concat([df,df_gaps]).sort_index()
     else:
         return df
+    
+def crop_df(df,sdate,edate) -> pd.DataFrame:
+    """
+    Crop a Dataframe between start and end dates
+    :param df: pandas dataframe with time index
+    :param sdate: pd.Timestamp or date format YYYYMMDD
+    :param edate: pd.Timestamp or date format YYYYMMDD
+    """
+    return df.loc[(df.index >= sdate) & (df.index <= edate)]
+
+def nearest_dekad(day: int) -> int:
+    return 1 if day<11 else (11 if day<21 else 21)
 
 class setup_args:
     working_dir = '/data/webservice/CLIMATE'
