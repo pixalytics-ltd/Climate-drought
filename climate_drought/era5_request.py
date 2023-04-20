@@ -70,7 +70,7 @@ class ERA5Download():
         :return: path to the file that will be downloaded
         """
         freq = 'monthly' if self.req.monthly else 'hourly'
-        file_str = "{sd}-{ed}_{fq}_{la}_{lo}".format(sd=self.req.start_date, ed=self.req.end_date, fq=freq, la=self.req.latitude, lo=self.req.longitude)
+        file_str = "{sd}-{ed}_{la}_{lo}_{fq}".format(sd=self.req.start_date, ed=self.req.end_date, la=self.req.latitude, lo=self.req.longitude, fq=freq)
         return os.path.join(self.req.working_dir, self.req.fname_out + "_{d}.nc".format(d=file_str))
     
     def download(self) -> str:
