@@ -1,8 +1,7 @@
-
-import argparse
 import datetime
 import glob
 import numpy as np
+import pandas as pd
 import xarray as xr
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -12,14 +11,14 @@ from typing import List
 # Links from Climate-drought repository
 from climate_drought import config, drought_indices as dri
 
-"""
-Script to generate a web app to view and interact with Index input and output data.
-To run:
-- change 'OUTPUT_DIR' to location of netcdf files
-- in the command line, activate climate-env
-- enter 'streamlit run index_viewer.py'
-The web app will start up in a window in your browser.
-"""
+# """
+# Script to generate a web app to view and interact with Index input and output data.
+# To run:
+# - change 'OUTPUT_DIR' to location of netcdf files
+# - in the command line, activate climate-env
+# - enter 'streamlit run index_viewer.py'
+# The web app will start up in a window in your browser.
+# """
 
 OUTPUT_DIR = 'output'
 
@@ -28,9 +27,13 @@ C_WARNING = 'darkorange'
 C_ALERT1 = 'orangered'
 C_ALERT2 = 'crimson'
 
+DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200101','20221231'),
+              'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200101','20221231')}
+
+
 st.set_page_config(layout="wide")
 
-@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
+#@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
 def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,warning_var=None):
 
     fig, ax = plt.subplots(figsize=(10,3))
@@ -76,34 +79,40 @@ def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,w
 
     return fig, ax
 
-@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
+@st.cache(hash_funcs={dri.DroughtIndex: id},allow_output_mutation=True)
+def load_index(index: dri.DroughtIndex,cfg: config.Config,aa:config.AnalysisArgs):
+    idx = index(cfg,aa)
+    idx.download()
+    idx.process()
+    return idx
+
+#@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
 def load_indices(aa,cf):
 
     # Make sure everything is already downloaded else it'll take ages
-    spi = dri.SPI(cf,aa)
-    sma_ecmwf = dri.SMA_ECMWF(cf,aa)
-    sma_edo = dri.SMA_EDO(cf,aa)
-    fapar = dri.FPAR_EDO(cf,aa)
-
-    spi.download()
-    sma_ecmwf.download()
-
-    spi.process()
-    sma_ecmwf.process()
-    sma_edo.process()
-    fapar.process()
+    spi = load_index(dri.SPI,cf,aa)
+    sma_ecmwf = load_index(dri.SMA_ECMWF,cf,aa)
+    sma_edo = load_index(dri.SMA_GDO,cf,aa)
+    fapar = load_index(dri.FPAR_GDO,cf,aa)
 
     return spi, sma_ecmwf, sma_edo, fapar
 
-@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
-def load_cdi(aa,cf,spi,sma,fpr):
+#@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
+def load_cdi(aa: config.AnalysisArgs,cf: config.Config,sma_source,sma_level):
+    aa_cdi = config.CDIArgs(
+        latitude=aa.latitude,
+        longitude=aa.longitude,
+        start_date=aa.start_date,
+        end_date=aa.end_date,
+        sma_source=sma_source,
+        sma_var=sma_level
+    )
+    cdi = load_index(dri.CDI,cf,aa_cdi)
+    return cdi.data
 
-    cdi = dri.CDI(cf,aa,spi=spi,sma=sma,fpr=fpr)
-    return cdi.process()
-
-@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
-def load_era_soilmoisture(fname):
-    return  xr.open_dataset(fname).isel(expver=0).mean(('latitude','longitude')).drop_vars('expver').to_dataframe()
+# @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
+# def load_era_soilmoisture(fname):
+#     return  xr.open_dataset(fname).isel(expver=0).mean(('latitude','longitude')).drop_vars('expver').to_dataframe()
 
 @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
 def draw_map(aa):
@@ -129,48 +138,61 @@ def draw_map(aa):
         showlegend = False)
     return fig
 
-# configure inputs
-aa = config.AnalysisArgs(
-    latitude=52.5,
-    longitude=1.25,
-    start_date='20200101',
-    end_date='20221231',
-    product='SMA'
-)
 cf = config.Config(outdir= 'output')
 
 plot_options = {'SPI':False,
-                'Soil Water Vol. (ECMWF)':False,
+                #'Soil Water Vol. (ECMWF)':False,
                 'SMA (ECMWF)':False,
                 'SMA (EDO)':False,
                 'fAPAR (EDO)': False}
 
-# load data upfront
-spi, sma_ecmwf, sma_edo, fpr = load_indices(aa,cf)
 with st.sidebar:
+
+    # Input
+    # lat = st.number_input('Latitude',min_value=-90.0,max_value=90.0,value=52.5)
+    # lon = st.number_input('Longitude',min_value=-180.0,max_value=180.0,value=1.25)
+    # sdate = st.date_input('Start date',value=datetime.date(2020,1,1))
+    # edate = st.date_input('End date',value=datetime.date(2022,12,31))
+    aa = DOWNLOADED[st.selectbox('Study area',DOWNLOADED.keys())]
 
     # Select view mode
     view = st.radio('View mode', ['CDI Breakdown','Index Comparison'])
 
     # COMPARE INDICES
     if view == 'Index Comparison':
-        plot_cdi = False
+        # configure inputs
+        # aa = config.AnalysisArgs(
+        #     latitude=lat,
+        #     longitude=lon,
+        #     start_date=sdate.strftime('%Y%m%d'),
+        #     end_date=edate.strftime('%Y%m%d'),
+        # )
+        spi, sma_ecmwf, sma_edo, fpr = load_indices(aa,cf)
+
         df_spi = spi.data
         df_sma_ecmwf = sma_ecmwf.data
         df_sma_edo = sma_edo.data
         df_fpr = fpr.data
-        ds_swvl = load_era_soilmoisture(sma_ecmwf.download_obj_baseline.download_file_path)
+
+        #ds_swvl = load_era_soilmoisture(sma_ecmwf.download_obj_baseline.download_file_path)
 
         st.header('Compare Indices:')
         for itm in plot_options:
             plot_options[itm] = st.checkbox(itm,key=itm)
         print(plot_options)
         sma_level = st.selectbox('Soil Water Indicator Level',['1','2','3','4'])
+        plot_cdi=False
 
     # CDI BREAKDOWN
     elif view == 'CDI Breakdown':
-        cdi = load_cdi(aa,cf,spi,sma_edo,fpr)
-        plot_cdi = True
+        sma_source = st.selectbox('SMA Source',['EDO','ECMWF'])
+        if sma_source=='ECMWF':
+            sma_level = st.selectbox('Soil Water Indicator Level',['1','2','3','4'])
+        elif sma_source=='EDO':
+            sma_level = 'smant'
+
+        cdi = load_cdi(aa,cf,sma_source,sma_level)
+        plot_cdi=True
 
 col1,col2 = st.columns(2)
 with col1:
@@ -184,9 +206,9 @@ if view == "Index Comparison":
         fig, ax = plot(df_spi,['spi'],'Standardised Precipitation Index',warning=-1,warning_var='spi')
         figs.append(fig)
 
-    if plot_options['Soil Water Vol. (ECMWF)']:
-        fig, ax = plot(ds_swvl,['swvl1','swvl2','swvl3','swvl4'],title='Soil Water Volume',showmean=True)
-        figs.append(fig)
+    # if plot_options['Soil Water Vol. (ECMWF)']:
+    #     fig, ax = plot(ds_swvl,['swvl1','swvl2','swvl3','swvl4'],title='Soil Water Volume',showmean=True)
+    #     figs.append(fig)
 
     if plot_options['SMA (ECMWF)']:
         fig, ax = plot(df_sma_ecmwf,['zscore_swvl'+ str(n) for n in[1,2,3,4]],title='Soil Moisture Anomaly (ECMWF)',warning=-1,warning_var='zscore_swvl{}'.format(sma_level))
@@ -201,13 +223,13 @@ if view == "Index Comparison":
         figs.append(fig)
 
 elif view == "CDI Breakdown":
-    fig, ax = plot(cdi,['SPI'],title='SPI')
+    fig, ax = plot(cdi,['spi'],title='SPI')
     figs.append(fig)
 
-    fig, ax = plot(cdi,['SMA'],title='SMA')
+    fig, ax = plot(cdi,[sma_level],title='SMA')
     figs.append(fig)
 
-    fig, ax = plot(cdi,['fAPAR'],title='fAPAR')
+    fig, ax = plot(cdi,['fpanv'],title='fAPAR')
     figs.append(fig)
 
 
