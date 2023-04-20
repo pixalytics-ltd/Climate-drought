@@ -46,7 +46,7 @@ class DroughtIndex(ABC):
 
     @property
     def index_shortname(self):
-        return  type(self).__name__.replace('_','-')
+        return type(self).__name__.replace('_','')
 
     @property
     def output_file_path(self):
@@ -55,7 +55,7 @@ class DroughtIndex(ABC):
         :return: path to the output file
         """
         file_str = "{sd}-{ed}_{la}_{lo}".format(sd=self.args.start_date, ed=self.args.end_date, la=self.args.latitude, lo=self.args.longitude)
-        return os.path.join(self.config.outdir, self.index_shortname + "_{d}.json".format(d=file_str))
+        return os.path.join(self.config.outdir, self.index_shortname.lower() + "_{d}.json".format(d=file_str))
 
     @abstractclassmethod
     def download(self) -> List[str]:
@@ -254,7 +254,7 @@ class SPI(DroughtIndex):
         # Select requested time slice
         self.logger.debug("Filtering between {} and {}".format(self.args.start_date, self.args.end_date))
         self.logger.debug("Index: {}".format(df.index[0]))
-        df_filtered = utils.crop_df(df,self.args.start_date,self.args.end_date)#df.loc[(df.index >= self.args.start_date) & (df.index <= self.args.end_date)]
+        df_filtered = utils.crop_df(df,self.args.start_date,self.args.end_date)
 
         return df_filtered
     
@@ -497,33 +497,14 @@ class CDI(DroughtIndex):
     def __init__(
             self,
             cfg: config.Config,
-            args: config.AnalysisArgs,
-            sma_source: str = 'EDO',
-            spi: SPI = None,
-            sma: Union[SMA_ECMWF,SMA_GDO] = None,
-            fpr: FPAR_GDO = None
+            args: config.CDIArgs
             ):
         super().__init__(cfg,args)
 
         # Initialise all separate indicators to be combined
         sdate_ts = pd.Timestamp(args.start_date)
         sdate_dk = sdate_ts.replace(day=utils.nearest_dekad(sdate_ts.day))
-        def create_new(idx: DroughtIndex, required_sdate: pd.Timestamp, name: str) -> bool:
-            """
-            Determine if we need to create a new index or use the one provided
-            """
-            if (idx is not None):
-                if (idx.data.index[0] <= required_sdate <= idx.data.index[-1]):
-                    return False
-                else:
-                    self.logger.info('{0} provided does not meet timing requirements: requried start {1} not within data time bounds {2} to {3}'.format(name,required_sdate,args.start_date,args.end_date))
-                    self.logger.info('Creating new {} object...'.format(name))
-                    return True
-            else:
-                self.logger.info('No {0} provided.'.format(name))
-                self.logger.info('Creating new {} object...'.format(name))
-                return True
-            
+
         def aa_new(required_sdate: pd.Timestamp) -> config.AnalysisArgs:
             """
             Helper function to quickly return modified arguments
@@ -535,20 +516,20 @@ class CDI(DroughtIndex):
         # SPI: one month before
         # SPI dates are always at the start of each month because it's the monthly average
         sdate_spi = sdate_ts.replace(day=1) - relativedelta(months=1)
-        self.spi = SPI(cfg,aa_new(sdate_spi)) if create_new(spi,sdate_spi,'SPI') else spi
+        self.spi = SPI(cfg,aa_new(sdate_spi))
             
         # SMA: 2 dekads before
         sdate_sma = sdate_dk - relativedelta(days=20)
-        sma_class = SMA_ECMWF if sma_source=='ECMWF' else SMA_GDO
-        self.sma = sma_class(cfg,aa_new(sdate_sma)) if create_new(sma,sdate_sma,'SMA') else sma
+        sma_class = SMA_ECMWF if args.sma_source=='ECMWF' else SMA_GDO
+        self.sma = sma_class(cfg,aa_new(sdate_sma))
          
         # fAPAR - 1 dekad before
         sdate_fpr = sdate_dk - relativedelta(days=10)
-        self.fpr = FPAR_GDO(cfg,aa_new(sdate_fpr)) if create_new(fpr,sdate_fpr,'fAPAR') else fpr
+        self.fpr = FPAR_GDO(cfg,aa_new(sdate_fpr))
         
         # Initialise times
         # We want our final timeseries to include all data from the beginning of the SPI to the end of the CDI, so all data can be retained
-        self.time_dekads = utils.dti_dekads(sdate_dk,args.end_date)
+        self.time_dekads = utils.dti_dekads(sdate_spi,args.end_date)
 
     def download(self):
         self.spi.download()
@@ -580,6 +561,7 @@ class CDI(DroughtIndex):
         spi_shifted = spi_filled.shift(3)
         sma_shifted = sma_filled.shift(2)
         fpr_shifted = fpr_filled.shift(1)
+        self.sma_shifted = sma_shifted
         self.fpr_shifted = fpr_shifted
 
         self.df_shifted = pd.concat([spi_shifted,sma_shifted,fpr_shifted],axis=1)
@@ -591,25 +573,24 @@ class CDI(DroughtIndex):
         # 3: alert 1 = fpr < -1 and spi < -1
         # 4: alert 2 = all < -1
 
-        anyna = self.df_shifted.isna().any(axis=1).to_numpy()
-        spi_warn = (spi_shifted < -1).to_numpy().flatten()
-        sma_warn = (sma_shifted < -1).to_numpy().flatten()
-        fpr_warn = (fpr_shifted < -1).to_numpy().flatten()
-
-        cdi = []
-        for spi_, sma_, fpr_, anyna_ in zip(spi_warn,sma_warn,fpr_warn, anyna):
-            if anyna_:
-                cdi.append(np.nan)
+        def calc_cdi(r):
+            spi_ = r[self.args.spi_var] < -1
+            sma_ = r[self.args.sma_var] < -1
+            fpr_ = r[self.args.fpr_var] < -1
+            if r.isna().any():
+                return np.nan
             elif spi_ and sma_ and fpr_:
-                cdi.append(4) # alert 2
+                return 4
             elif spi_ and fpr_:
-                cdi.append(3) # alert 1
+                return 3
             elif spi_ and sma_:
-                cdi.append(2) # warning
+                return 2
             elif spi_:
-                cdi.append(1) # watch
+                return 1
             else:
-                cdi.append(0) # normal
+                return 0
+            
+        cdi = self.df_shifted.apply(calc_cdi,axis=1)
 
         df = self.df_shifted
         df['CDI'] = cdi
