@@ -110,7 +110,7 @@ class DroughtIndex(ABC):
         with open(self.output_file_path, "w", encoding='utf-8') as outfile:
             geojson.dump(json_x, outfile, indent=4)
 
-    # TODO draft implementation - needs expanding for other indicies
+    # TODO draft implementation - SMA just for surface and needs expanding for other indices
     def generate_covjson(self, df_filtered) -> None:
         """
          Generates CoverageJSON file for data
@@ -120,55 +120,55 @@ class DroughtIndex(ABC):
         # Extract dates and values
         dates = df_filtered.index.values
         if self.args.index == "SMA":
-            precip_name = "Precipitation"
+            sm_name = "Soil Moisture"
 
-            precip_vals = df_filtered.tp.values
+            sm_vals = df_filtered.swvl1.values
             pvals = []
-            for val in precip_vals:
+            for val in sm_vals:
                 pvals.append(float(val))
-            spi_name = "SPI"
-            spi_vals = df_filtered.spi.values
+            sma_name = self.args.index
+            sma_vals = df_filtered.zscore_swvl1.values
             svals = []
-            for val in spi_vals:
+            for val in sma_vals:
                 svals.append(float(val))
-            num_vals = len(spi_vals)
+            num_vals = len(sma_vals)
 
             parameters = {
-                precip_name: Parameter(
+                sm_name: Parameter(
                     type="Parameter",
                     description={
-                        "en": "Total Precipitation"
+                        "en": "Surface Soil Moisture"
                     },
                     unit={
-                        "symbol": "m"
+                        "symbol": "m3/m3"
                     },
                     observedProperty={
-                        "id": "https://vocab.nerc.ac.uk/standard_name/precipitation_amount/",
+                        "id": "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables",
                         "label": {
-                            "en": "Precipition_amount"
+                            "en": "Soil_moisture_amount"
                         }
                     }
                 ),
-                spi_name: Parameter(
+                sma_name: Parameter(
                     type="Parameter",
                     description={
-                        "en": "Standard Precipitation Index"
+                        "en": "Surface Soil Moisture Anomaly"
                     },
                     unit={
                         "symbol": "unitless"
                     },
                     observedProperty={
-                        "id": "https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi",
+                        "id": "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables",
                         "label": {
-                            "en": "Standard Precipitation Index"
+                            "en": "Surface Soil Moisture Anomaly"
                         }
                     }
                 ),
             }
 
             ranges = {
-                precip_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
-                spi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals)
+                sm_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
+                sma_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals)
             }
         else:
             precip_name = "Precipitation"
@@ -177,7 +177,7 @@ class DroughtIndex(ABC):
             pvals = []
             for val in precip_vals:
                 pvals.append(float(val))
-            spi_name = "SPI"
+            spi_name = self.args.index
             spi_vals = df_filtered.spi.values
             svals = []
             for val in spi_vals:
@@ -431,7 +431,7 @@ class SPI(DroughtIndex):
         # Calculates SPI precipitation drought index
         df_filtered = self.convert_precip_to_spi()
 
-        # Save JSON file
+        # Save output file
         ## TODO SL to finish implementation of CoverageJSON so can be chosen option
         oformat = self.args.oformat.lower()
         if "cov" in oformat: # Generate CoverageJSON file
@@ -503,7 +503,11 @@ class SoilMoisture(DroughtIndex):
         hourly_swv = xr.open_dataset(self.swv_hourly_download.download_file_path).squeeze()
 
         # Reduce monthly data to what's relevant
-        monthly_swv = monthly_swv.isel(expver=0).drop_vars('expver').mean(('latitude','longitude'))
+        # Check if expver exists in data frame
+        if 'expver' in monthly_swv:
+            monthly_swv = monthly_swv.isel(expver=0).drop_vars('expver').mean(('latitude','longitude'))
+        else:
+            monthly_swv = monthly_swv.mean(('latitude','longitude'))
         swv_mean = monthly_swv.mean('time')
         swv_std = monthly_swv.std('time')
 
@@ -516,9 +520,18 @@ class SoilMoisture(DroughtIndex):
             col = 'swvl' + str(layer)
             swv_dekads['zscore_' + col] = ((swv_dekads[col] - swv_mean[col].item()) / swv_std[col].item())
 
-        # Output to JSON
-        self.generate_geojson(swv_dekads)
+        # Save output file
+        ## TODO SL to finish implementation of CoverageJSON so can be chosen option
+        oformat = self.args.oformat.lower()
+        if "cov" in oformat: # Generate CoverageJSON file
+            self.generate_covjson(swv_dekads)
+        elif "csv" in oformat:  # Generate CSV
+            swv_dekads.to_csv(self.output_file_path)
+        elif "net" in oformat:  # Generate NetCDF
+            xr.Dataset(swv_dekads.to_xarray()).to_netcdf(self.output_file_path)
+        else: # Generate GeoJSON
+            self.generate_geojson(swv_dekads)
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
-        return swv_dekads
+        return self.output_file_path
