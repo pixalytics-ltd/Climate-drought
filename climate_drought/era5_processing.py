@@ -121,6 +121,7 @@ class DroughtIndex(ABC):
         dates = df_filtered.index.values
         if self.args.index == "SMA":
             sm_name = "Soil Moisture"
+            self.logger.warning("Just outputting the surface, level 1, soil moisture and associated anomaly")
 
             sm_vals = df_filtered.swvl1.values
             pvals = []
