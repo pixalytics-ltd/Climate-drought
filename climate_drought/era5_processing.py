@@ -54,7 +54,17 @@ class DroughtIndex(ABC):
         :return: path to the output file
         """
         file_str = "{sd}-{ed}_{la}_{lo}".format(sd=self.args.start_date, ed=self.args.end_date, la=self.args.latitude, lo=self.args.longitude)
-        return os.path.join(self.config.outdir, self.index_shortname + "_{d}.json".format(d=file_str))
+        oformat = self.args.oformat.lower()
+        if "cov" in oformat: # Generate CoverageJSON file
+            file_ext = 'covjson'
+        elif "csv" in oformat:  # Generate CSV
+            file_ext = 'csv'
+        elif "net" in oformat:  # Generate NetCDF
+            file_ext = 'nc'
+        else: # Generate GeoJSON
+            file_ext = 'json'
+
+        return os.path.join(self.config.outdir, self.index_shortname + "_{d}.{e}".format(d=file_str, e=file_ext))
 
     @abstractclassmethod
     def download(self) -> List[str]:
@@ -100,7 +110,7 @@ class DroughtIndex(ABC):
         with open(self.output_file_path, "w", encoding='utf-8') as outfile:
             geojson.dump(json_x, outfile, indent=4)
 
-    # TODO SL draft implementation for precipitation
+    # TODO draft implementation - needs expanding for other indicies
     def generate_covjson(self, df_filtered) -> None:
         """
          Generates CoverageJSON file for data
@@ -109,30 +119,21 @@ class DroughtIndex(ABC):
 
         # Extract dates and values
         dates = df_filtered.index.values
-        precip_name = "Precipitation"
-        precip_vals = df_filtered.tp.values
-        pvals = []
-        for val in precip_vals:
-            pvals.append(float(val))
-        spi_name = "SPI"
-        spi_vals = df_filtered.spi.values
-        svals = []
-        for val in spi_vals:
-            svals.append(float(val))
-        num_vals = len(spi_vals)
+        if self.args.index == "SMA":
+            precip_name = "Precipitation"
 
-        # Create Structure
-        self.feature_collection = Coverage(
-            domain=Domain(
-                domainType="PointSeries",
-                axes={
-                    "x": {"dataType": "float", "values": [self.args.longitude]},
-                    "y": {"values": [self.args.latitude]},
-                    "t": {"dataType": "datetime", "values": list(dates)}
-                },
-            ),
-            referencing=ReferenceSystem(coordinates=["x", "y"], type="GeographicCRS"),
-            parameters={
+            precip_vals = df_filtered.tp.values
+            pvals = []
+            for val in precip_vals:
+                pvals.append(float(val))
+            spi_name = "SPI"
+            spi_vals = df_filtered.spi.values
+            svals = []
+            for val in spi_vals:
+                svals.append(float(val))
+            num_vals = len(spi_vals)
+
+            parameters = {
                 precip_name: Parameter(
                     type="Parameter",
                     description={
@@ -163,11 +164,77 @@ class DroughtIndex(ABC):
                         }
                     }
                 ),
-            },
-            ranges={
+            }
+
+            ranges = {
                 precip_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
                 spi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals)
             }
+        else:
+            precip_name = "Precipitation"
+
+            precip_vals = df_filtered.tp.values
+            pvals = []
+            for val in precip_vals:
+                pvals.append(float(val))
+            spi_name = "SPI"
+            spi_vals = df_filtered.spi.values
+            svals = []
+            for val in spi_vals:
+                svals.append(float(val))
+            num_vals = len(spi_vals)
+
+            parameters = {
+                precip_name: Parameter(
+                    type="Parameter",
+                    description={
+                        "en": "Total Precipitation"
+                    },
+                    unit={
+                        "symbol": "m"
+                    },
+                    observedProperty={
+                        "id": "https://vocab.nerc.ac.uk/standard_name/precipitation_amount/",
+                        "label": {
+                            "en": "Precipition_amount"
+                        }
+                    }
+                ),
+                spi_name: Parameter(
+                    type="Parameter",
+                    description={
+                        "en": "Standard Precipitation Index"
+                    },
+                    unit={
+                        "symbol": "unitless"
+                    },
+                    observedProperty={
+                        "id": "https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi",
+                        "label": {
+                            "en": "Standard Precipitation Index"
+                        }
+                    }
+                ),
+            }
+
+            ranges = {
+                precip_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
+                spi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals)
+            }
+
+        # Create Structure
+        self.feature_collection = Coverage(
+            domain=Domain(
+                domainType="PointSeries",
+                axes={
+                    "x": {"dataType": "float", "values": [self.args.longitude]},
+                    "y": {"values": [self.args.latitude]},
+                    "t": {"dataType": "datetime", "values": list(dates)}
+                },
+            ),
+            referencing=ReferenceSystem(coordinates=["x", "y"], type="GeographicCRS"),
+            parameters=parameters,
+            ranges=ranges
         )
 
         json_x = self.feature_collection.json(exclude_none=True, indent=True)
@@ -269,7 +336,7 @@ class SPI(DroughtIndex):
         super().__init__(config, args, 'spi')
         
         # create era5 request object
-        req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True, aws=True)
+        req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True, aws=self.config.aws)
 
         # initialise the download object using the request, but don't download yet
         self.spi_download = erq.ERA5Download(req,self.logger)
@@ -366,9 +433,13 @@ class SPI(DroughtIndex):
 
         # Save JSON file
         ## TODO SL to finish implementation of CoverageJSON so can be chosen option
-        covjson = False
-        if covjson: # Generate CoverageJSON file
+        oformat = self.args.oformat.lower()
+        if "cov" in oformat: # Generate CoverageJSON file
             self.generate_covjson(df_filtered)
+        elif "csv" in oformat:  # Generate CSV
+            df_filtered.to_csv(self.output_file_path)
+        elif "net" in oformat:  # Generate NetCDF
+            xr.Dataset(df_filtered.to_xarray()).to_netcdf(self.output_file_path)
         else: # Generate GeoJSON
             self.generate_geojson(df_filtered)
 
