@@ -269,7 +269,7 @@ class SPI(DroughtIndex):
         super().__init__(config, args, 'spi')
         
         # create era5 request object
-        req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True, aws=True)
+        req = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, baseline=True, aws=self.config.aws)
 
         # initialise the download object using the request, but don't download yet
         self.spi_download = erq.ERA5Download(req,self.logger)
