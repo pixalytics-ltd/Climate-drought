@@ -4,7 +4,7 @@ Development of drought indicators linked to the OGC Climate Resilience Pilot
 ## Standalone installation for Windows
 
 Install conda environment using the Anaconda Prompt:
-- Setup the climate_env conda environment from within the code directory: `conda env create -n climate_env -f environment.yml python=3.8`
+- Setup the climate_env conda environment from within the code directory: `conda env create -n climate_env -f environment.yml`
 - Activate the environment: `conda activate climate_env`
 - Use pip to install the main branch of the climate indices repository: `pip install -e git+https://github.com/monocongo/climate_indices.git@master#egg=climate_indices`
 - Use pip to install the feature/20 branch of the pixutils repository: `pip install -e git+https://github.com/pixalytics-ltd/pixutils.git@feature/20#egg=pixutils`
