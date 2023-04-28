@@ -126,7 +126,7 @@ class ERA5Download():
         else:
             times = [self.SAMPLE_TIME]
 
-        if self.req.monthly and 'precip' in self.req.variables[0]:
+        if self.req.aws and self.req.monthly and 'precip' in self.req.variables[0]:
             self._download_aws_data(area=area_box,
                                     out_file=self.download_file_path)
         else:
