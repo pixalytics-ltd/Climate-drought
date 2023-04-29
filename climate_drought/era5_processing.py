@@ -314,9 +314,11 @@ class SPI(DroughtIndex):
         if self.config.aws:
             # TODO AWS is hourly, so accumulate to monthly for now
             resamp = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
-            precip = resamp.copy()
-        else:
+
+        if resamp.ndim > 1:
             precip = resamp[:, 0]
+        else:
+            precip = resamp.copy()
 
         self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(precip.values), np.nanmin(precip.values), np.nanmax(precip.values)))
 
@@ -324,7 +326,7 @@ class SPI(DroughtIndex):
         spi = indices.INDICES()
         spi_vals = spi.calc_spi(np.array(precip.values).flatten())
         self.logger.info("SPI, {} values: {:.3f} {:.3f}".format(len(spi_vals), np.nanmin(spi_vals),np.nanmax(spi_vals)))
-        if not self.config.aws:
+        if "expver" in resamp.to_dataframe():
             resamp = resamp.sel(expver=1, drop=True)
 
         # Convert xarray to dataframe Series and add SPI
@@ -372,7 +374,7 @@ class SPI(DroughtIndex):
         else: # Generate GeoJSON
             self.generate_geojson(df_filtered)
 
-        return self.output_file_path
+        return df_filtered
     
 class SoilMoisture(DroughtIndex):
     """
@@ -432,7 +434,11 @@ class SoilMoisture(DroughtIndex):
         hourly_swv = xr.open_dataset(self.swv_hourly_download.download_file_path).squeeze()
 
         # Reduce monthly data to what's relevant
-        monthly_swv = monthly_swv.isel(expver=0).drop_vars('expver').mean(('latitude','longitude'))
+        if "expver" in monthly_swv.to_dataframe():
+            monthly_swv = monthly_swv.isel(expver=0).drop_vars('expver').mean(('latitude','longitude'))
+        else:
+            monthly_swv = monthly_swv.mean(('latitude','longitude'))
+
         swv_mean = monthly_swv.mean('time')
         swv_std = monthly_swv.std('time')
 
