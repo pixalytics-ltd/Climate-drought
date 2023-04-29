@@ -94,9 +94,9 @@ ax2.set_ylim(lims)
 
 # access raw soil moisture data
 ds_swvl = xr.open_dataset(swvl_fname)
-if "expver" in ds_swvl.to_dataframe():
+try:
     ds_swvl = ds_swvl.isel(expver=0).mean(('latitude','longitude')).drop_vars('expver')
-else:
+except:
     ds_swvl = ds_swvl.mean(('latitude','longitude'))
 
 fig3,ax = plt.subplots(figsize=(10,3))
