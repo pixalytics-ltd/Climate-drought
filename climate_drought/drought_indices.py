@@ -516,16 +516,19 @@ class CDI(DroughtIndex):
         # SPI: one month before
         # SPI dates are always at the start of each month because it's the monthly average
         sdate_spi = sdate_ts.replace(day=1) - relativedelta(months=1)
-        self.spi = SPI(cfg,aa_new(sdate_spi))
+        self.aa_spi = aa_new(sdate_spi)
+        self.spi = SPI(cfg,self.aa_spi)
             
         # SMA: 2 dekads before
         sdate_sma = sdate_dk - relativedelta(days=20)
         sma_class = SMA_ECMWF if args.sma_source=='ECMWF' else SMA_GDO
-        self.sma = sma_class(cfg,aa_new(sdate_sma))
+        self.aa_sma = aa_new(sdate_sma)
+        self.sma = sma_class(cfg,self.aa_sma)
          
         # fAPAR - 1 dekad before
         sdate_fpr = sdate_dk - relativedelta(days=10)
-        self.fpr = FPAR_GDO(cfg,aa_new(sdate_fpr))
+        self.aa_fpr = aa_new(sdate_fpr)
+        self.fpr = FPAR_GDO(cfg,self.aa_fpr)
         
         # Initialise times
         # We want our final timeseries to include all data from the beginning of the SPI to the end of the CDI, so all data can be retained

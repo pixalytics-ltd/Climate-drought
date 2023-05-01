@@ -11,15 +11,6 @@ from typing import List
 # Links from Climate-drought repository
 from climate_drought import config, drought_indices as dri
 
-# """
-# Script to generate a web app to view and interact with Index input and output data.
-# To run:
-# - change 'OUTPUT_DIR' to location of netcdf files
-# - in the command line, activate climate-env
-# - enter 'streamlit run index_viewer.py'
-# The web app will start up in a window in your browser.
-# """
-
 OUTPUT_DIR = 'output'
 
 C_WATCH = 'gold'
@@ -87,17 +78,17 @@ def load_index(index: dri.DroughtIndex,cfg: config.Config,aa:config.AnalysisArgs
     return idx
 
 #@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
-def load_indices(aa,cf):
+def load_indices(cdi: dri.CDI):
 
     # Make sure everything is already downloaded else it'll take ages
-    spi = load_index(dri.SPI,cf,aa)
-    sma_ecmwf = load_index(dri.SMA_ECMWF,cf,aa)
-    sma_edo = load_index(dri.SMA_GDO,cf,aa)
-    fapar = load_index(dri.FPAR_GDO,cf,aa)
+    spi = load_index(dri.SPI,cdi.config,cdi.aa_spi)
+    sma_ecmwf = load_index(dri.SMA_ECMWF,cdi.config,cdi.aa_sma)
+    sma_edo = load_index(dri.SMA_GDO,cdi.config,cdi.aa_sma)
+    fapar = load_index(dri.FPAR_GDO,cdi.config,cdi.aa_fpr)
 
     return spi, sma_ecmwf, sma_edo, fapar
 
-#@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
+@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
 def load_cdi(aa: config.AnalysisArgs,cf: config.Config,sma_source,sma_var):
     aa_cdi = config.CDIArgs(
         latitude=aa.latitude,
@@ -108,7 +99,7 @@ def load_cdi(aa: config.AnalysisArgs,cf: config.Config,sma_source,sma_var):
         sma_var=sma_var
     )
     cdi = load_index(dri.CDI,cf,aa_cdi)
-    return cdi.data
+    return cdi
 
 # @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
 # def load_era_soilmoisture(fname):
@@ -141,10 +132,9 @@ def draw_map(aa):
 cf = config.Config(outdir= 'output')
 
 plot_options = {'SPI':False,
-                #'Soil Water Vol. (ECMWF)':False,
                 'SMA (ECMWF)':False,
-                'SMA (EDO)':False,
-                'fAPAR (EDO)': False}
+                'SMA (GDO)':False,
+                'fAPAR (GDO)': False}
 
 with st.sidebar:
 
@@ -154,6 +144,10 @@ with st.sidebar:
     # sdate = st.date_input('Start date',value=datetime.date(2020,1,1))
     # edate = st.date_input('End date',value=datetime.date(2022,12,31))
     aa = DOWNLOADED[st.selectbox('Study area',DOWNLOADED.keys())]
+
+    # Pre-download CDI options for speed
+    cdi_edo = load_cdi(aa,cf,'GDO','smant')
+    cdi_ecmwf = load_cdi(aa,cf,'ECMWF','zscore_swvl3')
 
     # Select view mode
     view = st.radio('View mode', ['CDI Breakdown','Index Comparison'])
@@ -167,12 +161,12 @@ with st.sidebar:
         #     start_date=sdate.strftime('%Y%m%d'),
         #     end_date=edate.strftime('%Y%m%d'),
         # )
-        spi, sma_ecmwf, sma_edo, fpr = load_indices(aa,cf)
+        #spi, sma_ecmwf, sma_edo, fpr = load_indices(cdi)
 
-        df_spi = spi.data
-        df_sma_ecmwf = sma_ecmwf.data
-        df_sma_edo = sma_edo.data
-        df_fpr = fpr.data
+        df_spi = cdi_edo.spi.data
+        df_sma_ecmwf = cdi_ecmwf.sma.data
+        df_sma_edo = cdi_edo.sma.data
+        df_fpr = cdi_edo.fpr.data
 
         #ds_swvl = load_era_soilmoisture(sma_ecmwf.download_obj_baseline.download_file_path)
 
@@ -185,13 +179,14 @@ with st.sidebar:
 
     # CDI BREAKDOWN
     elif view == 'CDI Breakdown':
-        sma_source = st.selectbox('SMA Source',['EDO','ECMWF'])
+        sma_source = st.selectbox('SMA Source',['GDO','ECMWF'])
         if sma_source=='ECMWF':
             sma_var = st.selectbox('Soil Water Indicator Level',['zscore_swvl' + str(i) for i in ['1','2','3','4']])
-        elif sma_source=='EDO':
+            cdi = cdi_ecmwf.data
+        elif sma_source=='GDO':
             sma_var = 'smant'
-
-        cdi = load_cdi(aa,cf,sma_source,sma_var)
+            cdi=cdi_edo.data
+        
         plot_cdi=True
 
 col1,col2 = st.columns(2)
@@ -214,11 +209,11 @@ if view == "Index Comparison":
         fig, ax = plot(df_sma_ecmwf,['zscore_swvl'+ str(n) for n in[1,2,3,4]],title='Soil Moisture Anomaly (ECMWF)',warning=-1,warning_var='zscore_swvl{}'.format(sma_level))
         figs.append(fig)
 
-    if plot_options['SMA (EDO)']:
+    if plot_options['SMA (GDO)']:
         fig, ax = plot(df_sma_edo,['smant'],title='Ensemble Soil Moisture Anomaly (EDO)',warning=-1,warning_var='smant')
         figs.append(fig)
 
-    if plot_options['fAPAR (EDO)']:
+    if plot_options['fAPAR (GDO)']:
         fig, ax = plot(df_fpr,['fpanv'],title='Fraction of Absorbed Photosynthetically Active Radiation',warning=-1,warning_var='fpanv')
         figs.append(fig)
 
