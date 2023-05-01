@@ -45,9 +45,10 @@ def df_to_dekads(df: pd.DataFrame) -> pd.DataFrame:
     :param df: pd.Dataframe with time index with a frequency > 10 days e.g. daily, hourly
     :return: dataframe with dekad frequency
     """
-    d = df.index.day - np.clip((df.index.day-1) // 10, 0, 2)*10 - 1
-    date = df.index.values - np.array(d, dtype="timedelta64[D]")
-    return df.groupby(date).mean()
+    df_daily = df.resample('1D').mean()
+    d = df_daily.index.day - np.clip((df_daily.index.day-1) // 10, 0, 2)*10 - 1
+    date = df_daily.index.to_numpy() - np.array(d, dtype="timedelta64[D]")
+    return df_daily.groupby(date).mean()
 
 def dti_dekads(sdate,edate):
     """

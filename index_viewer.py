@@ -27,8 +27,8 @@ C_WARNING = 'darkorange'
 C_ALERT1 = 'orangered'
 C_ALERT2 = 'crimson'
 
-DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200101','20221231'),
-              'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200101','20221231')}
+DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231'),
+              'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231')}
 
 
 st.set_page_config(layout="wide")
@@ -98,14 +98,14 @@ def load_indices(aa,cf):
     return spi, sma_ecmwf, sma_edo, fapar
 
 #@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
-def load_cdi(aa: config.AnalysisArgs,cf: config.Config,sma_source,sma_level):
+def load_cdi(aa: config.AnalysisArgs,cf: config.Config,sma_source,sma_var):
     aa_cdi = config.CDIArgs(
         latitude=aa.latitude,
         longitude=aa.longitude,
         start_date=aa.start_date,
         end_date=aa.end_date,
         sma_source=sma_source,
-        sma_var=sma_level
+        sma_var=sma_var
     )
     cdi = load_index(dri.CDI,cf,aa_cdi)
     return cdi.data
@@ -187,11 +187,11 @@ with st.sidebar:
     elif view == 'CDI Breakdown':
         sma_source = st.selectbox('SMA Source',['EDO','ECMWF'])
         if sma_source=='ECMWF':
-            sma_level = st.selectbox('Soil Water Indicator Level',['1','2','3','4'])
+            sma_var = st.selectbox('Soil Water Indicator Level',['zscore_swvl' + str(i) for i in ['1','2','3','4']])
         elif sma_source=='EDO':
-            sma_level = 'smant'
+            sma_var = 'smant'
 
-        cdi = load_cdi(aa,cf,sma_source,sma_level)
+        cdi = load_cdi(aa,cf,sma_source,sma_var)
         plot_cdi=True
 
 col1,col2 = st.columns(2)
@@ -226,7 +226,7 @@ elif view == "CDI Breakdown":
     fig, ax = plot(cdi,['spi'],title='SPI')
     figs.append(fig)
 
-    fig, ax = plot(cdi,[sma_level],title='SMA')
+    fig, ax = plot(cdi,[sma_var],title='SMA')
     figs.append(fig)
 
     fig, ax = plot(cdi,['fpanv'],title='fAPAR')
