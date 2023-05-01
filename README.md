@@ -33,15 +33,13 @@ key: xxxx
 
 - Run the test procedure in the activated conda environment where you define a local output directory: `python test_drought.py -y 52.5 -x 1.25 -s 20200101 -e 20221231 -p SPI -o <output-folder>`
 
-- Alternatively run the cells in test_cdi.ipynb to interactively test the different index objects
-
 ## Index_viewer web app
 
 Script to generate a web app to view and interact with Index input and output data.
 To run:
 - ensure streamlit=1.8.1 is installed in your environmnt
 - change 'OUTPUT_DIR' to location of downloaded netcdf files from ECMWF and output JSON files
-- the 'DOWNLOADED' constant is a dictionary containing the details of data which has already been downloaded. I recommend downloading the required data for a number of test case CDI's using the test scripts, because the web app will hang if you try to download data while that's running. Bear in mind that the dates of the individual index data will not be the same as the arguments specified here, as the CDI requires longer time-periods of indices.
+- the 'DOWNLOADED' constant is a dictionary containing the details of data which has already been downloaded. I recommend downloading the required data for a number of test case CDI's using the test_drought script, because the web app will hang if you try to download data while that's running. Bear in mind that the dates of the individual index data will not be the same as the arguments specified here, as the CDI requires longer time-periods of indices.
 - in the command line, activate climate-env
 - enter 'streamlit run index_viewer.py'
 The web app will start up in a window in your browser.
