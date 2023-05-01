@@ -11,6 +11,16 @@ Install conda environment using the Anaconda Prompt:
 
 Note: if the climate indices or pixutils respositories needs to be edited locally, then clone them and when inside the repository, with the conda environment activated, run: `python setup.py develop`
 
+## Using pre-calculated index data from GDO
+
+Fraction of Active Photosynthetically Active Radiation is obtained from a file downloaded manually from the Global Drought Observatory (GDO) where it has been precomputed. Soil moisture anomaly is either computed from ECMWF data, which takes a long time to request and download, or obtained directly from a precomputed file from GDO. These files must be downloaded for these indicies to be calculated.
+
+Data source: https://edo.jrc.ec.europa.eu/gdo/php/index.php?id=2112
+From the above link, download files and store in folders as follows:
+- All within an 'input' directory as defined in config.py
+- input/smant/ -> download in here all years under 'Ensemble Soil Moisture Anomaly' and 'Ensemble Soil Moisture Anomaly (2M...'
+- input/fpanv/ -> download in here all years under 'FAPAR Anomaly' and 'FAPAR Anomaly (VIIRS)'
+
 ## Testing climate indices
 
 - Register on the Copernicus Climate Services portal: https://cds.climate.copernicus.eu/#!/home
@@ -22,4 +32,19 @@ key: xxxx
 ```
 
 - Run the test procedure in the activated conda environment where you define a local output directory: `python test_drought.py -y 52.5 -x 1.25 -s 20200101 -e 20221231 -p SPI -o <output-folder>`
+
+- Alternatively run the cells in test_cdi.ipynb to interactively test the different index objects
+
+## Index_viewer web app
+
+Script to generate a web app to view and interact with Index input and output data.
+To run:
+- ensure streamlit=1.8.1 is installed in your environmnt
+- change 'OUTPUT_DIR' to location of downloaded netcdf files from ECMWF and output JSON files
+- the 'DOWNLOADED' constant is a dictionary containing the details of data which has already been downloaded. I recommend downloading the required data for a number of test case CDI's using the test scripts, because the web app will hang if you try to download data while that's running. Bear in mind that the dates of the individual index data will not be the same as the arguments specified here, as the CDI requires longer time-periods of indices.
+- in the command line, activate climate-env
+- enter 'streamlit run index_viewer.py'
+The web app will start up in a window in your browser.
+
+
 
