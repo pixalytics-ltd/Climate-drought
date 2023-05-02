@@ -93,7 +93,11 @@ ax2.fill_between(df_spi.index, *[-4,4], where=warning, facecolor='red', alpha=.2
 ax2.set_ylim(lims)
 
 # access raw soil moisture data
-ds_swvl = xr.open_dataset(swvl_fname).isel(expver=0).mean(('latitude','longitude')).drop_vars('expver')
+ds_swvl = xr.open_dataset(swvl_fname)
+try:
+    ds_swvl = ds_swvl.isel(expver=0).mean(('latitude','longitude')).drop_vars('expver')
+except:
+    ds_swvl = ds_swvl.mean(('latitude','longitude'))
 
 fig3,ax = plt.subplots(figsize=(10,3))
 for n in [1,2,3,4]:
