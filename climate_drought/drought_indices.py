@@ -3,12 +3,20 @@ import os
 import numpy as np
 import pandas as pd
 import xarray as xr
-import json
-import geojson
 import glob
 import datetime
 from dateutil.relativedelta import relativedelta
 
+# JSON export
+import json
+import geojson
+from covjson_pydantic.reference_system import ReferenceSystem
+from covjson_pydantic.domain import Domain
+from covjson_pydantic.ndarray import NdArray
+from covjson_pydantic.coverage import Coverage
+from covjson_pydantic.parameter import Parameter, ParameterGroup
+
+# Drought indices calculator
 from climate_drought import indices, config, utils, era5_request as erq
 
 # pygeometa for OGC API record creation
@@ -100,6 +108,80 @@ class DroughtIndex(ABC):
         with open(self.output_file_path, "w", encoding='utf-8') as outfile:
             geojson.dump(json_x, outfile, indent=4)
 
+    # TODO SL draft implementation for precipitation
+    def generate_covjson(self, df_filtered) -> None:
+        """
+         Generates CoverageJSON file for data
+         :return: path to the json file
+         """
+
+        # Extract dates and values
+        dates = df_filtered.index.values
+        precip_name = "Precipitation"
+        precip_vals = df_filtered.tp.values
+        pvals = []
+        for val in precip_vals:
+            pvals.append(float(val))
+        spi_name = "SPI"
+        spi_vals = df_filtered.spi.values
+        svals = []
+        for val in spi_vals:
+            svals.append(float(val))
+        num_vals = len(spi_vals)
+
+        # Create Structure
+        self.feature_collection = Coverage(
+            domain=Domain(
+                domainType="PointSeries",
+                axes={
+                    "x": {"dataType": "float", "values": [self.args.longitude]},
+                    "y": {"values": [self.args.latitude]},
+                    "t": {"dataType": "datetime", "values": list(dates)}
+                },
+            ),
+            referencing=ReferenceSystem(coordinates=["x", "y"], type="GeographicCRS"),
+            parameters={
+                precip_name: Parameter(
+                    type="Parameter",
+                    description={
+                        "en": "Total Precipitation"
+                    },
+                    unit={
+                        "symbol": "m"
+                    },
+                    observedProperty={
+                        "id": "https://vocab.nerc.ac.uk/standard_name/precipitation_amount/",
+                        "label": {
+                            "en": "Precipition_amount"
+                        }
+                    }
+                ),
+                spi_name: Parameter(
+                    type="Parameter",
+                    description={
+                        "en": "Standard Precipitation Index"
+                    },
+                    unit={
+                        "symbol": "unitless"
+                    },
+                    observedProperty={
+                        "id": "https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi",
+                        "label": {
+                            "en": "Standard Precipitation Index"
+                        }
+                    }
+                ),
+            },
+            ranges={
+                precip_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
+                spi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals)
+            }
+        )
+
+        json_x = self.feature_collection.json(exclude_none=True, indent=True)
+        f = open(self.output_file_path, "w", encoding='utf-8')
+        f.write(json_x)
+
     def generate_record(self) -> None:
         """
          Generates OGC API Record JSON file
@@ -181,6 +263,14 @@ class DroughtIndex(ABC):
 
         self.logger.info("Processing completed successfully for {}".format(json_file))
 
+    def generate_output(self) -> None:
+        # Save JSON file
+        ## TODO SL to finish implementation of CoverageJSON so can be chosen option
+        covjson = False
+        if covjson: # Generate CoverageJSON file
+            self.generate_covjson(self.data)
+        else: # Generate GeoJSON
+            self.generate_geojson(self.data)
 
 class SPI(DroughtIndex):
 
@@ -194,14 +284,14 @@ class SPI(DroughtIndex):
         super().__init__(config, args)
         
         # create era5 request object
-        request = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, start_date=config.baseline_start, end_date=config.baseline_end)
+        request = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, start_date=config.baseline_start, end_date=config.baseline_end, aws=self.config.aws)
 
         # initialise the download object using the request, but don't download yet
         self.download_obj = erq.ERA5Download(request,self.logger)
 
     def download(self):
         """
-        Download requried data from ERA5 portal using the imported ERA5 request module.
+        Download required data from ERA5 portal using the imported ERA5 request module.
         The processing part of the SPI calculation requires that the long term dataset is passed in at the same time as the short term analysis period therefore we must request the whole baseline period for this analysis.
         :output: list containing name of single generated netcdf file. Must be a list as other indices will return the paths to multiple netcdfs for baseline and short-term timespans.
         """
@@ -227,15 +317,15 @@ class SPI(DroughtIndex):
 
         if 'expver' in datxr.keys():
             datxr = datxr.sel(expver=1,drop=True)
+
         self.logger.debug("Xarray:")
         self.logger.debug(datxr)
 
         # Convert to monthly sums and extract max of the available cells
-        #if not self.args.accum:
-        # TODO JC reinstate this for SPI but at the moment we're just using monthly data so accum will never be true
-        precip = datxr.tp.max(['latitude', 'longitude']).load()
-        #else:
-        #resamp = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
+        if self.config.aws: # or any other setting which would result in more than monthy data
+            precip = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
+        else:
+            precip = datxr.tp.max(['latitude', 'longitude']).load()
 
         self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(precip.values), np.nanmin(precip.values), np.nanmax(precip.values)))
 
@@ -279,7 +369,7 @@ class SPI(DroughtIndex):
         df_filtered = utils.fill_gaps(time_months,df_filtered)
 
         if not os.path.isfile(self.output_file_path):
-            self.generate_geojson(df_filtered)
+            self.generate_output()
 
         # store processed data on object
         self.data = df_filtered
@@ -384,7 +474,7 @@ class SMA_ECMWF(DroughtIndex):
         swv_dekads = utils.fill_gaps(time_dekads,swv_dekads)
 
         # Output to JSON
-        self.generate_geojson(swv_dekads)
+        self.generate_output()
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
@@ -432,7 +522,7 @@ class SMA_GDO(DroughtIndex):
         
         # Output to JSON
         if not os.path.isfile(self.output_file_path):
-            self.generate_geojson(df)
+            self.generate_output()
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
@@ -480,7 +570,7 @@ class FPAR_GDO(DroughtIndex):
         
         # Output to JSON
         if not os.path.isfile(self.output_file_path):
-            self.generate_geojson(df)
+            self.generate_output()
 
         self.logger.info("Completed processing of ERA5 fAPAR data.")
 
@@ -600,7 +690,7 @@ class CDI(DroughtIndex):
         
         # Output to JSON
         if not os.path.isfile(self.output_file_path):
-            self.generate_geojson(df)
+            self.generate_output()
 
         self.logger.info("Completed processing of ERA5 CDI data.")
         self.data = df

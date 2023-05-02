@@ -35,7 +35,7 @@ class DROUGHT:
 
         # Transfer args
         self.product = args.product
-        self.config = config.Config(args.outdir,args.indir,args.verbose)
+        self.config = config.Config(args.outdir,args.indir,args.verbose,aws=args.aws)
 
         if args.product == 'CDI':
             self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date, args.sma_source)
@@ -66,16 +66,16 @@ class DROUGHT:
         if os.path.exists(idx.output_file_path):
             self.logger.info("Processed file '{}' already exists.".format(idx.output_file_path))
         else:
-            downloaded_files = idx.download()
-            processed_file = idx.process()
+            idx.download()
+            idx.process()
             self.logger.info("Downloading and processing complete for '{}' completed.".format(idx.output_file_path))
 
         if os.path.exists(idx.output_file_path):
             exit_code = 1
-            self.logger.info("{} processing complete".format(self.index))
-
-        self.logger.info("Processing complete")
-
+            self.logger.info("{} processing complete, generated {}".format(self.args.index, idx.output_file_path))
+        else:
+            self.logger.info("Processing failed, {} does not exist".format(idx.output_file_path))
+        
         return exit_code
 
 def main():
@@ -104,11 +104,11 @@ def main():
         action="store_true",
         default=False,
     )
-    parser.add_argument("-A", "--accum", action="store_true", default=False, help="Accumulation - not set from cammand line")
-    parser.add_argument("-y", "--latitude", type=float, dest="latitude", default=52.5)
-    parser.add_argument("-x", "--longitude", type=float, dest="longitude", default=1.25)
-    parser.add_argument("-p", "--product", type=str, dest="product", default='SPI')
-    parser.add_argument("-P", "--plot", action="store_true", default=False, help="Create plot for diagnostics")
+    parser.add_argument("-A", "--accum", action="store_true", default=False, help="Accumulation - not set from command line")
+    parser.add_argument("-AWS", "--aws", action="store_true", default=False, help="Download from AWS rather than CDS for SPI")
+    parser.add_argument("-y", "--latitude", type=float, dest="latitude")
+    parser.add_argument("-x", "--longitude", type=float, dest="longitude")
+    parser.add_argument("-p", "--product", type=str, dest="product", default='none')
     parser.add_argument("-t", "--type", type=str, dest="type", default='none')
     parser.add_argument("-s", "--sdate", type=str, dest="start_date", default='20200116', help="Start date as YYYYMMDD")
     parser.add_argument("-e", "--edate", type=str, dest="end_date", default='20200410', help="End date as YYYYMMDD")
