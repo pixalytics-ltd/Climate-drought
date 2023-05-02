@@ -1,12 +1,7 @@
-#!/usr/bin/env python
 import os
-import shutil
-import sys
 from sys import exit
-import glob
 import argparse
-from datetime import date, datetime
-import numpy as np
+
 
 # Links from Climate-drought repository
 from climate_drought import drought_indices as dri, config
@@ -72,7 +67,7 @@ class DROUGHT:
 
         if os.path.exists(idx.output_file_path):
             exit_code = 1
-            self.logger.info("{} processing complete, generated {}".format(self.args.index, idx.output_file_path))
+            self.logger.info("{} processing complete, generated {}".format(self.product, idx.output_file_path))
         else:
             self.logger.info("Processing failed, {} does not exist".format(idx.output_file_path))
         
@@ -112,7 +107,7 @@ def main():
     parser.add_argument("-t", "--type", type=str, dest="type", default='none')
     parser.add_argument("-s", "--sdate", type=str, dest="start_date", default='20200116', help="Start date as YYYYMMDD")
     parser.add_argument("-e", "--edate", type=str, dest="end_date", default='20200410', help="End date as YYYYMMDD")
-    parser.add_argument("-S", "--smasrc", type=str, dest="sma_source", default='EDO', help="'EDO' or 'ECMWF")
+    parser.add_argument("-S", "--smasrc", type=str, dest="sma_source", default='GDO', help="'GDO' or 'ECMWF")
 
 
     # define arguments
