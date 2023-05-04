@@ -23,6 +23,8 @@ DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','
 
 SMA_LEVEL_DEFAULT = 'zscore_swvl3'
 
+RESTRICT_DATA_SELECTION = False
+
 st.set_page_config(layout="wide")
 
 def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,warning_var=None):
@@ -142,28 +144,53 @@ plot_options = {'SPI (ECMWF)':False,
 with st.sidebar:
 
     # Input
-    # lat = st.number_input('Latitude',min_value=-90.0,max_value=90.0,value=52.5)
-    # lon = st.number_input('Longitude',min_value=-180.0,max_value=180.0,value=1.25)
-    # sdate = st.date_input('Start date',value=datetime.date(2020,1,1))
-    # edate = st.date_input('End date',value=datetime.date(2022,12,31))
-    aa = DOWNLOADED[st.selectbox('Study area',DOWNLOADED.keys())]
+    if RESTRICT_DATA_SELECTION:
+        aa = DOWNLOADED[st.selectbox('Study area',DOWNLOADED.keys())]
+    else:
+        with st.form('inputs'):
+            lat = st.number_input('Latitude',min_value=-90.0,max_value=90.0,value=52.5)
+            lon = st.number_input('Longitude',min_value=-180.0,max_value=180.0,value=1.25)
+            sdate = st.date_input('Start date',value=datetime.date(2020,1,1))
+            edate = st.date_input('End date',value=datetime.date(2022,12,31))
+            submitted = st.form_submit_button("Submit")
+
+        if submitted:
+            aa = config.AnalysisArgs(
+                latitude=lat,
+                longitude=lon,
+                start_date=sdate.strftime('%Y%m%d'),
+                end_date=edate.strftime('%Y%m%d'),
+            )
+        else:
+            aa = DOWNLOADED['SE England, 2020-2022']
 
     # Pre-download CDI options for speed
     cdi_gdo = load_cdi(aa,cf,'GDO','smant')
-    cdi_ecmwf = load_cdi(aa,cf,'ECMWF',SMA_LEVEL_DEFAULT)
 
-    # Select view mode
-    view = st.radio('View mode', ['CDI Breakdown','Index Comparison'])
+    # Only do ECMWF if data selection is restricted
+    if RESTRICT_DATA_SELECTION:
+        cdi_ecmwf = load_cdi(aa,cf,'ECMWF',SMA_LEVEL_DEFAULT)
+        view = st.radio('View mode', ['CDI Breakdown','Index Comparison'])
+    else:
+        view = 'CDI Breakdown'
 
-    # COMPARE INDICES
-    if view == 'Index Comparison':
-        # configure inputs
-        # aa = config.AnalysisArgs(
-        #     latitude=lat,
-        #     longitude=lon,
-        #     start_date=sdate.strftime('%Y%m%d'),
-        #     end_date=edate.strftime('%Y%m%d'),
-        # )
+    if view == 'CDI Breakdown':
+        sma_source = st.selectbox('SMA Source',['GDO','ECMWF']) if RESTRICT_DATA_SELECTION else 'GDO'
+        if sma_source=='ECMWF': 
+            # ERA5 data has multiple layers, so option to choose which layer is used
+            sma_var = st.selectbox('Soil Water Indicator Level',['zscore_swvl' + str(i) for i in ['1','2','3','4']])
+
+            # Need to re-initialise the object using the selected layer
+            cdi_obj = cdi_ecmwf if sma_var == SMA_LEVEL_DEFAULT else load_cdi(aa,cf,'ECMWF',sma_var)
+
+        elif sma_source=='GDO':
+            # Re-use the object initialised earlier
+            cdi_obj = cdi_gdo
+        cdi = cdi_obj.data
+        plot_cdi=True
+
+    elif view == 'Index Comparison':
+
         #spi, sma_ecmwf, sma_edo, fpr = load_indices(cdi)
 
         df_spi_ecmwf = cdi_ecmwf.spi.data
@@ -181,21 +208,7 @@ with st.sidebar:
         sma_level = st.selectbox('Soil Water Indicator Level',['1','2','3','4'])
         plot_cdi=False
 
-    # CDI BREAKDOWN
-    elif view == 'CDI Breakdown':
-        sma_source = st.selectbox('SMA Source',['GDO','ECMWF'])
-        if sma_source=='ECMWF': 
-            # ERA5 data has multiple layers, so option to choose which layer is used
-            sma_var = st.selectbox('Soil Water Indicator Level',['zscore_swvl' + str(i) for i in ['1','2','3','4']])
 
-            # Need to re-initialise the object using the selected layer
-            cdi_obj = cdi_ecmwf if sma_var == SMA_LEVEL_DEFAULT else load_cdi(aa,cf,'ECMWF',sma_var)
-
-        elif sma_source=='GDO':
-            # Re-use the object initialised earlier
-            cdi_obj = cdi_gdo
-        cdi = cdi_obj.data
-        plot_cdi=True
 
 col1,col2 = st.columns(2)
 with col1:
