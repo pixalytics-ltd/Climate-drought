@@ -10,7 +10,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 INDEX_MAP = {
-    'SPI': dri.SPI,
+    'SPI_ECMWF': dri.SPI_ECMWF,
+    'SPI_GDO': dri.SPI_GDO,
     'SMA_ECMWF': dri.SMA_ECMWF,
     'SMA_GDO': dri.SMA_GDO,
     'fAPAR': dri.FPAR_GDO,

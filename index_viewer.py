@@ -21,10 +21,10 @@ C_ALERT2 = 'crimson'
 DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231'),
               'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231')}
 
+SMA_LEVEL_DEFAULT = 'zscore_swvl3'
 
 st.set_page_config(layout="wide")
 
-#@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
 def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,warning_var=None):
 
     fig, ax = plt.subplots(figsize=(10,3))
@@ -81,21 +81,23 @@ def load_index(index: dri.DroughtIndex,cfg: config.Config,aa:config.AnalysisArgs
 def load_indices(cdi: dri.CDI):
 
     # Make sure everything is already downloaded else it'll take ages
-    spi = load_index(dri.SPI,cdi.config,cdi.aa_spi)
+    spi_ecmwf = load_index(dri.SPI_ECMWF,cdi.config,cdi.aa_spi)
+    spi_gdo = load_index(dri.SPI_GDO,cdi.config,cdi.aa_spi)
     sma_ecmwf = load_index(dri.SMA_ECMWF,cdi.config,cdi.aa_sma)
-    sma_edo = load_index(dri.SMA_GDO,cdi.config,cdi.aa_sma)
+    sma_gdo = load_index(dri.SMA_GDO,cdi.config,cdi.aa_sma)
     fapar = load_index(dri.FPAR_GDO,cdi.config,cdi.aa_fpr)
 
-    return spi, sma_ecmwf, sma_edo, fapar
+    return spi_ecmwf, spi_gdo, sma_ecmwf, sma_gdo, fapar
 
 @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
-def load_cdi(aa: config.AnalysisArgs,cf: config.Config,sma_source,sma_var):
+def load_cdi(aa: config.AnalysisArgs,cf: config.Config,source,sma_var):
     aa_cdi = config.CDIArgs(
         latitude=aa.latitude,
         longitude=aa.longitude,
         start_date=aa.start_date,
         end_date=aa.end_date,
-        sma_source=sma_source,
+        spi_source=source,
+        sma_source=source,
         sma_var=sma_var
     )
     cdi = load_index(dri.CDI,cf,aa_cdi)
@@ -131,7 +133,8 @@ def draw_map(aa):
 
 cf = config.Config(outdir= 'output')
 
-plot_options = {'SPI':False,
+plot_options = {'SPI (ECMWF)':False,
+                'SPI (GDO)': False,
                 'SMA (ECMWF)':False,
                 'SMA (GDO)':False,
                 'fAPAR (GDO)': False}
@@ -146,8 +149,8 @@ with st.sidebar:
     aa = DOWNLOADED[st.selectbox('Study area',DOWNLOADED.keys())]
 
     # Pre-download CDI options for speed
-    cdi_edo = load_cdi(aa,cf,'GDO','smant')
-    cdi_ecmwf = load_cdi(aa,cf,'ECMWF','zscore_swvl3')
+    cdi_gdo = load_cdi(aa,cf,'GDO','smant')
+    cdi_ecmwf = load_cdi(aa,cf,'ECMWF',SMA_LEVEL_DEFAULT)
 
     # Select view mode
     view = st.radio('View mode', ['CDI Breakdown','Index Comparison'])
@@ -163,10 +166,11 @@ with st.sidebar:
         # )
         #spi, sma_ecmwf, sma_edo, fpr = load_indices(cdi)
 
-        df_spi = cdi_edo.spi.data
+        df_spi_ecmwf = cdi_ecmwf.spi.data
+        df_spi_gdo = cdi_gdo.spi.data
         df_sma_ecmwf = cdi_ecmwf.sma.data
-        df_sma_edo = cdi_edo.sma.data
-        df_fpr = cdi_edo.fpr.data
+        df_sma_edo = cdi_gdo.sma.data
+        df_fpr = cdi_gdo.fpr.data
 
         #ds_swvl = load_era_soilmoisture(sma_ecmwf.download_obj_baseline.download_file_path)
 
@@ -180,13 +184,17 @@ with st.sidebar:
     # CDI BREAKDOWN
     elif view == 'CDI Breakdown':
         sma_source = st.selectbox('SMA Source',['GDO','ECMWF'])
-        if sma_source=='ECMWF':
+        if sma_source=='ECMWF': 
+            # ERA5 data has multiple layers, so option to choose which layer is used
             sma_var = st.selectbox('Soil Water Indicator Level',['zscore_swvl' + str(i) for i in ['1','2','3','4']])
-            cdi = cdi_ecmwf.data
+
+            # Need to re-initialise the object using the selected layer
+            cdi_obj = cdi_ecmwf if sma_var == SMA_LEVEL_DEFAULT else load_cdi(aa,cf,'ECMWF',sma_var)
+
         elif sma_source=='GDO':
-            sma_var = 'smant'
-            cdi=cdi_edo.data
-        
+            # Re-use the object initialised earlier
+            cdi_obj = cdi_gdo
+        cdi = cdi_obj.data
         plot_cdi=True
 
 col1,col2 = st.columns(2)
@@ -197,8 +205,12 @@ figs = []
 
 if view == "Index Comparison":
 
-    if plot_options['SPI']:
-        fig, ax = plot(df_spi,['spi'],'Standardised Precipitation Index',warning=-1,warning_var='spi')
+    if plot_options['SPI (ECMWF)']:
+        fig, ax = plot(df_spi_ecmwf,['spi'],'Standardised Precipitation Index (ECMWF)',warning=-1,warning_var='spi')
+        figs.append(fig)
+
+    if plot_options['SPI (GDO)']:
+        fig, ax = plot(df_spi_gdo,['spg03'],'Standardised Precipitation Index (GDO)',warning=-1,warning_var='spg03')
         figs.append(fig)
 
     # if plot_options['Soil Water Vol. (ECMWF)']:
@@ -210,7 +222,7 @@ if view == "Index Comparison":
         figs.append(fig)
 
     if plot_options['SMA (GDO)']:
-        fig, ax = plot(df_sma_edo,['smant'],title='Ensemble Soil Moisture Anomaly (EDO)',warning=-1,warning_var='smant')
+        fig, ax = plot(df_sma_edo,['smant'],title='Ensemble Soil Moisture Anomaly (GDO)',warning=-1,warning_var='smant')
         figs.append(fig)
 
     if plot_options['fAPAR (GDO)']:
@@ -218,10 +230,10 @@ if view == "Index Comparison":
         figs.append(fig)
 
 elif view == "CDI Breakdown":
-    fig, ax = plot(cdi,['spi'],title='SPI')
+    fig, ax = plot(cdi,[cdi_obj.args.spi_var],title='SPI')
     figs.append(fig)
 
-    fig, ax = plot(cdi,[sma_var],title='SMA')
+    fig, ax = plot(cdi,[cdi_obj.args.sma_var],title='SMA')
     figs.append(fig)
 
     fig, ax = plot(cdi,['fpanv'],title='fAPAR')

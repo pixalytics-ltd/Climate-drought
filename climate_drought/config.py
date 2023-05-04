@@ -6,12 +6,13 @@ class AnalysisArgs():
         self.end_date = end_date
 
 class CDIArgs(AnalysisArgs):
-    def __init__(self, latitude, longitude, start_date, end_date, sma_source='GDO', spi_var='spi', sma_var='smant', fpr_var='fpanv'):
+    def __init__(self, latitude, longitude, start_date, end_date, spi_source='GDO',sma_source='GDO', sma_var=None):
         super().__init__(latitude, longitude, start_date, end_date)
+        self.spi_source = spi_source
         self.sma_source = sma_source
-        self.spi_var = spi_var
-        self.sma_var = sma_var
-        self.fpr_var = fpr_var
+        self.spi_var = 'spg03' if spi_source=='GDO' else 'spi'
+        self.sma_var = sma_var or ('smant' if spi_source=='GDO' else 'zscore_swvl3')
+        self.fpr_var = 'fpanv'
 
 class Config():
     def __init__(self,outdir='output',indir='input',verbose=True,baseline_start='19850101',baseline_end='20221231',aws=False):

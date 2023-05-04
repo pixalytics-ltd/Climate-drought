@@ -21,6 +21,7 @@ From the above link, download files and store in folders as follows:
 - All within an 'input' directory as defined in config.py
 - input/smant/ -> download in here all years under 'Ensemble Soil Moisture Anomaly' and 'Ensemble Soil Moisture Anomaly (2M...'
 - input/fpanv/ -> download in here all years under 'FAPAR Anomaly' and 'FAPAR Anomaly (VIIRS)'
+- input/spg03. -> download in here all years under 'Standardised Precipitation Index, 03-month accumulation period'
 
 ## Testing climate indices
 

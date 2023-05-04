@@ -27,7 +27,8 @@ from pygeometa.core import read_mcf
 from pygeometa.schemas.ogcapi_records import OGCAPIRecordOutputSchema
 
 from abc import ABC, abstractclassmethod
-from typing import List, Union
+from typing import List
+
 
 class DroughtIndex(ABC):
     """
@@ -74,7 +75,7 @@ class DroughtIndex(ABC):
         pass
 
     @abstractclassmethod
-    def process(self):
+    def process(self) -> pd.DataFrame:
         """
         Abstract method to ensure bespoke processing procedure is used for each index
         """
@@ -267,12 +268,41 @@ class DroughtIndex(ABC):
         # Save JSON file
         ## TODO SL to finish implementation of CoverageJSON so can be chosen option
         covjson = False
-        if covjson: # Generate CoverageJSON file
-            self.generate_covjson(self.data)
-        else: # Generate GeoJSON
-            self.generate_geojson(self.data)
+        if not os.path.isfile(self.output_file_path):
+            if covjson: # Generate CoverageJSON file
+                self.generate_covjson(self.data)
+            else: # Generate GeoJSON
+                self.generate_geojson(self.data)
+        else:
+            self.logger.warning('Outfile not written: already exists')
 
-class SPI(DroughtIndex):
+class GDODroughtIndex(DroughtIndex):
+    """
+    Specialisation of the Drought class for processing pre-computed indices from the Global Drought Observatory.
+    """
+    def __init__(self, config: config.Config, args: config.AnalysisArgs, fileloc, filestr):
+        super().__init__(config,args)
+        self.fileloc = config.indir + fileloc
+        self.filelist = glob.glob(self.fileloc + filestr)
+
+    def download(self):
+        # Do nothing - data already downloaded
+        if len(self.filelist) > 0:
+            self.logger.info("Downloaded files available.")
+        else:
+            self.logger.info("Cannot find downloaded files in folder {}".format(self.fileloc))
+        return self.fileloc
+
+    def load_and_trim(self):
+        # Open all dses and merge
+        get_ds = lambda fname: xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['lat','lon','4326']) 
+        df = xr.merge(get_ds(fname) for fname in self.filelist).to_dataframe()
+
+        # Trim to required dates
+        df = df.loc[(df.index >= self.args.start_date) & (df.index <= self.args.end_date)] 
+        return df
+  
+class SPI_ECMWF(DroughtIndex):
 
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
         """
@@ -348,8 +378,7 @@ class SPI(DroughtIndex):
 
         return df_filtered
     
-
-    def process(self) -> str:
+    def process(self):
         """
         Carries out processing of the downloaded data.  This is the main functionality that is likely to differ between
         each implementation.
@@ -364,18 +393,35 @@ class SPI(DroughtIndex):
         df_filtered = self.convert_precip_to_spi()
 
         # Fill any missing gaps
-        # Monthly for SPI - ASSUMES SPI data is always at the start of each month. TODO JC5 make sure this is the case and fix if not
         time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
         df_filtered = utils.fill_gaps(time_months,df_filtered)
 
-        if not os.path.isfile(self.output_file_path):
-            self.generate_output()
+        self.generate_output()
 
         # store processed data on object
         self.data = df_filtered
 
         return df_filtered
-    
+
+class SPI_GDO(GDODroughtIndex):
+    """
+    Specialisation of the GDODrought class for processing pre-computed photosynthetically active radiation anomaly data from GDO.
+    """
+    def __init__(self, config: config.Config, args: config.AnalysisArgs):
+        super().__init__(config,args,'/spg03','/spg03*.nc')
+
+    def process(self):
+        df = super().load_and_trim()
+
+        # Fill any data gaps
+        time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
+        df = utils.fill_gaps(time_months,df)
+
+        self.data = df
+        self.generate_output()
+
+        return df
+
 class SMA_ECMWF(DroughtIndex):
     """
     Specialisation of the json base class for downloading and processing soil water data
@@ -482,99 +528,46 @@ class SMA_ECMWF(DroughtIndex):
 
         return swv_dekads
 
-class SMA_GDO(DroughtIndex):
+class SMA_GDO(GDODroughtIndex):
     """
-    Specialisation of the Drought class for processing pre-downlaoded soil moisture anomaly data from EDO.
-    Requires that you have downladed all years of 'Ensemble Soil Moisture Anomaly' and 'Ensemble Soil Moisture Anomaly (2M, Lisflood...' 
-    from https://edo.jrc.ec.europa.eu/gdo/php/index.php?id=2112 and stored them in the 'input' folder as specified in the Config object
-    i.e. Ensemble moisture data must all be in /inputs/smant
+    Specialisation of the GDODrought class for processing pre-computed soil moisture anomaly from GDO.
     """
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
-        super().__init__(config,args)
-        self.files_loc = config.indir + '/smant'
-        self.filelist = glob.glob(self.files_loc + '/sma*.nc')
-
-    def download(self):
-        # Do nothing -data already downloaded
-        if len(self.filelist) > 0:
-            self.logger.info("Downloaded files available.")
-        else:
-            self.logger.info("Cannot find downloaded files in folder {}".format(self.files_loc))
-        return self.files_loc
-        
+        super().__init__(config,args,'/smant','/sma*.nc')
 
     def process(self):
-        # open all dses - doesn't take long
-        get_ds = lambda fname: xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['lat','lon','4326']) 
-        df = xr.merge(get_ds(fname) for fname in self.filelist).to_dataframe()
+        df = super().load_and_trim()
 
-        # trim to required dates
-        df = df.loc[(df.index >= self.args.start_date) & (df.index <= self.args.end_date)]
-
-        # smand is the modelled data and is availale more recently than the long term time series of smant
+        # smand is the modelled data and is available more recently than the long term time series of smant
         # replace missing smant values with smand and discard
         df.smant.fillna(df.smand, inplace=True)
         del df['smand']
 
-        # fill any data gaps
+        # Fill any data gaps
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
         df = utils.fill_gaps(time_dekads,df)
-        
-        # Output to JSON
-        if not os.path.isfile(self.output_file_path):
-            self.generate_output()
-
-        self.logger.info("Completed processing of ERA5 soil water data.")
 
         self.data = df
+        self.generate_output()
 
         return df
 
-class FPAR_GDO(DroughtIndex):
+class FPAR_GDO(GDODroughtIndex):
     """
-    Specialisation of the Drought class for processing pre-downlaoded photosynthetically active radiation anomaly data from EDO.
-    Requires that you have downladed all years of 'Fraction of Absorbed Photo....' and 'Fraction of Absorbed.... (VIIRS)' 
-    from https://edo.jrc.ec.europa.eu/gdo/php/index.php?id=2112 and stored them in the 'input' folder as specified in the Config object
-    i.e. data must all be in /inputs/fpanv
+    Specialisation of the GDODrought class for processing pre-computed photosynthetically active radiation anomaly data from GDO.
     """
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
-        super().__init__(config,args)
-        self.files_loc = config.indir + '/fpanv'
-        self.filelist = glob.glob(self.files_loc + '/fpanv*.nc')
-
-    def download(self):
-        # Do nothing -data already downloaded
-        if len(self.filelist) > 0:
-            self.logger.info("Downloaded files available.")
-        else:
-            self.logger.info("Cannot find downloaded files in folder {}".format(self.files_loc))
-        return self.files_loc
-        
-
+        super().__init__(config,args,'/fpanv','/fpanv*.nc')
+    
     def process(self):
-        # open all dses - doesn't take long
-        get_ds = lambda fname: xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['lat','lon','4326']) 
-        df = xr.merge(get_ds(fname) for fname in self.filelist).to_dataframe()
+        df = super().load_and_trim()
 
-        # trim to required dates
-        df = df.loc[(df.index >= self.args.start_date) & (df.index <= self.args.end_date)]
-
-        # smand is the modelled data and is availale more recently than the long term time series of smant
-        # replace missing fpanv values (which are better quality data?) with fapan
-        # df.fpanv.fillna(df.fapan, inplace=True)
-        # del df['fapan']
-
-        # fill any data gaps
+        # Fill any data gaps
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
         df = utils.fill_gaps(time_dekads,df)
-        
-        # Output to JSON
-        if not os.path.isfile(self.output_file_path):
-            self.generate_output()
-
-        self.logger.info("Completed processing of ERA5 fAPAR data.")
 
         self.data = df
+        self.generate_output()
 
         return df
 
@@ -582,7 +575,6 @@ class CDI(DroughtIndex):
 
     """
     Extension of base class for combined drought indicator
-    Can initialise from scratch or using existing index objects
     """
     def __init__(
             self,
@@ -606,8 +598,9 @@ class CDI(DroughtIndex):
         # SPI: one month before
         # SPI dates are always at the start of each month because it's the monthly average
         sdate_spi = sdate_ts.replace(day=1) - relativedelta(months=1)
+        spi_class = SPI_ECMWF if args.sma_source=='ECMWF' else SPI_GDO
         self.aa_spi = aa_new(sdate_spi)
-        self.spi = SPI(cfg,self.aa_spi)
+        self.spi = spi_class(cfg,self.aa_spi)
             
         # SMA: 2 dekads before
         sdate_sma = sdate_dk - relativedelta(days=20)
