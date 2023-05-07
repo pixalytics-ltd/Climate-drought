@@ -126,7 +126,7 @@ class ERA5Download():
         else:
             times = [self.SAMPLE_TIME]
 
-        if self.req.monthly and 'precip' in self.req.variables[0]:
+        if self.req.aws and self.req.monthly and 'precip' in self.req.variables[0]:
             self._download_aws_data(area=area_box,
                                     out_file=self.download_file_path)
         else:
@@ -250,7 +250,7 @@ class ERA5Download():
                         with fs2.open(jfile, 'wb') as outf:
                             outf.write(ujson.dumps(h5chunks.translate()).encode())
 
-            serial = True
+            serial = False
             if serial:
                 for u in urls:
                     gen_json(u)
