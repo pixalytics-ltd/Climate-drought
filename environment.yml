@@ -3,6 +3,9 @@ channels:
   - conda-forge
   - defaults
 dependencies:
+  - numpy
+  - pandas
+  - 
   - birdy
   - gdal>=3.4.1
   - matplotlib
