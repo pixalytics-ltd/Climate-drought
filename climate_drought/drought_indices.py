@@ -469,10 +469,10 @@ class SPI_ECMWF(DroughtIndex):
         time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
         df_filtered = utils.fill_gaps(time_months,df_filtered)
 
-        self.generate_output()
-
         # store processed data on object
         self.data = df_filtered
+
+        self.generate_output()
 
         return df_filtered
 
@@ -592,12 +592,12 @@ class SMA_ECMWF(DroughtIndex):
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
         swv_dekads = utils.fill_gaps(time_dekads,swv_dekads)
 
-        # Output to JSON
-        self.generate_output()
-
         self.logger.info("Completed processing of ERA5 soil water data.")
 
         self.data = swv_dekads
+
+        # Output to JSON
+        self.generate_output()
 
         return swv_dekads
 
@@ -754,11 +754,12 @@ class CDI(DroughtIndex):
         df = self.df_shifted
         df['CDI'] = cdi
         
+        self.data = df
+
         # Output to JSON
         if not os.path.isfile(self.output_file_path):
             self.generate_output()
 
         self.logger.info("Completed processing of ERA5 CDI data.")
-        self.data = df
         return df
     
