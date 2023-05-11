@@ -1,5 +1,5 @@
 class AnalysisArgs():
-    def __init__(self, latitude, longitude, start_date, end_date, product, oformat):
+    def __init__(self, latitude, longitude, start_date, end_date, product='SPI', oformat='GeoJSON'):
         self.latitude = latitude
         self.longitude = longitude
         self.start_date = start_date

@@ -53,6 +53,12 @@ class DROUGHT:
 
     def run_index(self):
 
+        # Setup defualt input sources
+        if self.product == "SPI":
+            self.product = "SPI_ECMWF"
+        elif self.product == "SMA":
+            self.product = "SMA_ECMWF"
+
         self.logger.debug("Computing {idx} index for {sd} to {ed}.".format(idx=self.product, sd=self.config.baseline_start, ed=self.config.baseline_end))
 
         exit_code = 0
