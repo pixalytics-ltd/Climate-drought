@@ -18,6 +18,7 @@ import fsspec
 import pathlib
 import ujson
 import zarr
+from enum import Enum
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -30,17 +31,18 @@ SOILWATER_VARIABLES = ["volumetric_soil_water_layer_1", "volumetric_soil_water_l
 AWSKEY = os.path.join(expanduser('~'), '.aws_api_key')
 AWS_PRECIP_VARIABLE = ['precipitation_amount_1hour_Accumulation']
 
+class Frequency(Enum):
+    MONTHLY = 'monthly'
+    DAILY = 'daily'
+    HOURLY = 'hourly'
 
 class ERA5Request():
     """
     Object to constrain ERA5 download inputs.
     Built inputs using analysis and config arguments.
-    Download can be either:
-    - baseline = True: a monthly mean over a long time period to form the mean or baseline against which anomalies can be computed
-    - baseline = False: a monthly or hourly value to retrieve data over shorter timescales
     """
     def __init__(self, variables, fname_out, args: config.AnalysisArgs, config: config.Config,
-                 start_date, end_date, aws=False, monthly=True):
+                 start_date, end_date, frequency: Frequency, aws=False):
 
         self.latitude = args.latitude
         self.longitude = args.longitude
@@ -50,7 +52,7 @@ class ERA5Request():
         self.working_dir = config.outdir
         self.fname_out = fname_out
         self.verbose = config.verbose
-        self.monthly = monthly
+        self.frequency = frequency
         self.aws = aws
 
 class ERA5Download():
@@ -63,13 +65,6 @@ class ERA5Download():
     SAMPLE_TIME = time(hour=12, minute=0)
 
     def __init__(self, req: ERA5Request, logger: logging.Logger):
-        """
-        Initializer; should be called by derived classes
-        :param args: program arguments
-        :param variables: era5 variables to be downloaded
-        :param working_dir: directory that will hold all files geerated by the class
-        :param baseline: use pre-defined start and end dates and monthly frequency to return a long-term average
-        """
         self.logger = logger
         self.req = req
 
@@ -89,12 +84,11 @@ class ERA5Download():
         Returns the path to the file that will be downloaded
         :return: path to the file that will be downloaded
         """
-        freq = 'monthly' if self.req.monthly else 'hourly'
         file_str = "{sd}-{ed}_{la}_{lo}_{fq}".format(sd=self.req.start_date,
                                                      ed=self.req.end_date,
                                                      la=self.req.latitude,
                                                      lo=self.req.longitude,
-                                                     fq=freq)
+                                                     fq=self.req.frequency.value)
     
         # Extra identifier for AWS downloaded ERA5 data
         if not self.req.aws:
@@ -120,14 +114,14 @@ class ERA5Download():
                     round(float(self.req.latitude) - boxsz, 2),
                     round(float(self.req.longitude) + boxsz, 2)]
 
-        if not self.req.monthly:
+        if self.req.frequency==Frequency.HOURLY:
             times = []
             for i in range(24):
                 times.append(time(hour=i, minute=0))
         else:
             times = [self.SAMPLE_TIME]
 
-        if self.req.aws and self.req.monthly and 'precip' in self.req.variables[0]:
+        if self.req.aws and self.req.frequency==Frequency.MONTHLY and 'precip' in self.req.variables[0]:
             self._download_aws_data(area=area_box,
                                     out_file=self.download_file_path)
         else:
@@ -135,7 +129,7 @@ class ERA5Download():
                                      dates=self.dates,
                                      times=times,
                                      area=area_box,
-                                     monthly=self.req.monthly,
+                                     frequency=self.req.frequency,
                                      out_file=self.download_file_path)
 
         if os.path.isfile(self.download_file_path):
@@ -146,7 +140,7 @@ class ERA5Download():
         return self.download_file_path
 
     def _download_era5_data(self, variables: List[str], dates: List[date], times: List[time], area: List[float],
-                            monthly: str, out_file: str) -> bool:
+                            frequency: Frequency, out_file: str) -> bool:
 
         """
         Executes the ERA5 download script in a separate process.
@@ -154,22 +148,18 @@ class ERA5Download():
         :param dates: a list of dates to download data for
         :param times: a list of times to download data for
         :param area: area of interest box to download data for
-        :param monthly: download monthly reanalysis data
+        :param freq: frequncy of data to be downloaded
         :param out_file: output_file_path: path to the output file containing the requested fields.  Supported output format is NetCDF, determined by file extension.
         :return: nothing
         """
         outfile_exists = False
 
         if not os.path.exists(out_file):
-            if monthly:
-                era_monthly = True
-            else:
-                era_monthly = False
 
-            self.logger.info("Downloading ERA data for {} {} for {}".format(dates[0], dates[-1], area))
+            self.logger.info("Downloading {} ERA data for {} {} for {}".format(frequency.value, dates[0], dates[-1], area))
             result = era_download.download_era5_reanalysis_data(dates=dates,
                                                                 times=times, variables=variables, area=str(area),
-                                                                monthly=era_monthly,
+                                                                frequency=frequency.value,
                                                                 file_path=os.path.expanduser(out_file))
 
             if result == 0:

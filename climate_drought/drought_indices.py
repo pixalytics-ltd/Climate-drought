@@ -314,7 +314,7 @@ class SPI_ECMWF(DroughtIndex):
         super().__init__(config, args)
         
         # create era5 request object
-        request = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, start_date=config.baseline_start, end_date=config.baseline_end, aws=self.config.aws)
+        request = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, start_date=config.baseline_start, end_date=config.baseline_end, frequency=erq.Frequency.MONTHLY, aws=self.config.aws)
 
         # initialise the download object using the request, but don't download yet
         self.download_obj = erq.ERA5Download(request,self.logger)
@@ -396,10 +396,10 @@ class SPI_ECMWF(DroughtIndex):
         time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
         df_filtered = utils.fill_gaps(time_months,df_filtered)
 
-        self.generate_output()
-
         # store processed data on object
         self.data = df_filtered
+
+        self.generate_output()
 
         return df_filtered
 
@@ -444,21 +444,22 @@ class SMA_ECMWF(DroughtIndex):
             self.args,
             self.config,
             start_date=config.baseline_start,
-            end_date=config.baseline_end)
+            end_date=config.baseline_end,
+            frequency=erq.Frequency.MONTHLY)
         
         self.download_obj_baseline = erq.ERA5Download(request_baseline, self.logger)
 
         #create era5 request object for short term period
-        request_shorterm = erq.ERA5Request(
+        request_sample = erq.ERA5Request(
             erq.SOILWATER_VARIABLES,
             'soilwater',
             self.args,
             self.config,
             args.start_date,
             args.end_date,
-            monthly=False)
+            frequency=erq.Frequency.DAILY if self.config.era_daily else erq.Frequency.HOURLY)
         
-        self.download_obj_hourly = erq.ERA5Download(request_shorterm, self.logger)
+        self.download_obj_sample = erq.ERA5Download(request_sample, self.logger)
     
     def download(self):
         """
@@ -474,9 +475,9 @@ class SMA_ECMWF(DroughtIndex):
         
         # download baseline and monthly data
         exists_or_download(self.download_obj_baseline)
-        exists_or_download(self.download_obj_hourly)
+        exists_or_download(self.download_obj_sample)
 
-        return [self.download_obj_baseline.download_file_path, self.download_obj_hourly.download_file_path]
+        return [self.download_obj_baseline.download_file_path, self.download_obj_sample.download_file_path]
 
     def process(self) -> str:
         """
@@ -487,17 +488,17 @@ class SMA_ECMWF(DroughtIndex):
         self.logger.info("Initiating processing of ERA5 soil water data.")
 
         path_monthly = self.download_obj_baseline.download_file_path
-        path_hourly = self.download_obj_hourly.download_file_path
+        path_sample = self.download_obj_sample.download_file_path
 
         if not os.path.isfile(path_monthly):
             raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(path_monthly))
         
-        if not os.path.isfile(path_hourly):
-            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(path_hourly))
+        if not os.path.isfile(path_sample):
+            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(path_sample))
 
         # Open netcdfs
         monthly_swv = xr.open_dataset(path_monthly)
-        hourly_swv = xr.open_dataset(path_hourly).squeeze()
+        sample_swv = xr.open_dataset(path_sample).squeeze()
 
         # Reduce monthly data to what's relevant
         if 'expver' in monthly_swv.keys():
@@ -506,9 +507,9 @@ class SMA_ECMWF(DroughtIndex):
         swv_mean = monthly_swv.mean('time')
         swv_std = monthly_swv.std('time')
 
-        # Resmple hourly data to dekafs
-        hourly_swv = hourly_swv.drop_vars(['latitude','longitude']).to_dataframe()
-        swv_dekads = utils.df_to_dekads(hourly_swv)
+        # Resmple sample data to dekads
+        sample_swv = sample_swv.drop_vars(['lat','lon'] if self.config.era_daily else ['latitude','longitude']).to_dataframe()
+        swv_dekads = utils.df_to_dekads(sample_swv)
         
         # Calculate zscores
         for layer in [1,2,3,4]:
@@ -519,12 +520,12 @@ class SMA_ECMWF(DroughtIndex):
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
         swv_dekads = utils.fill_gaps(time_dekads,swv_dekads)
 
+        self.data = swv_dekads
+
         # Output to JSON
         self.generate_output()
 
         self.logger.info("Completed processing of ERA5 soil water data.")
-
-        self.data = swv_dekads
 
         return swv_dekads
 
@@ -598,7 +599,7 @@ class CDI(DroughtIndex):
         # SPI: one month before
         # SPI dates are always at the start of each month because it's the monthly average
         sdate_spi = sdate_ts.replace(day=1) - relativedelta(months=1)
-        spi_class = SPI_ECMWF if args.sma_source=='ECMWF' else SPI_GDO
+        spi_class = SPI_ECMWF if args.spi_source=='ECMWF' else SPI_GDO
         self.aa_spi = aa_new(sdate_spi)
         self.spi = spi_class(cfg,self.aa_spi)
             
