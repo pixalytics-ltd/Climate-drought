@@ -295,7 +295,7 @@ class GDODroughtIndex(DroughtIndex):
 
     def load_and_trim(self):
         # Open all dses and merge
-        get_ds = lambda fname: xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['lat','lon','4326']) 
+        get_ds = lambda fname: utils.nc2xr(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['lat','lon','4326']) 
         df = xr.merge(get_ds(fname) for fname in self.filelist).to_dataframe()
 
         # Trim to required dates
@@ -343,7 +343,7 @@ class SPI_ECMWF(DroughtIndex):
         """
 
         # Extract data from NetCDF file
-        datxr = xr.open_dataset(self.download_obj.download_file_path)
+        datxr = utils.nc2xr(self.download_obj.download_file_path)
 
         if 'expver' in datxr.keys():
             datxr = datxr.sel(expver=1,drop=True)
@@ -497,8 +497,8 @@ class SMA_ECMWF(DroughtIndex):
             raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(path_sample))
 
         # Open netcdfs
-        monthly_swv = xr.open_dataset(path_monthly)
-        sample_swv = xr.open_dataset(path_sample).squeeze()
+        monthly_swv = utils.nc2xr(path_monthly)
+        sample_swv = utils.nc2xr(path_sample).squeeze()
 
         # Reduce monthly data to what's relevant
         if 'expver' in monthly_swv.keys():
