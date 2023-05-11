@@ -11,19 +11,26 @@ from typing import List
 # Links from Climate-drought repository
 from climate_drought import config, drought_indices as dri
 
-OUTPUT_DIR = 'output'
-
+# Colours to highlight plots in
 C_WATCH = 'gold'
 C_WARNING = 'darkorange'
 C_ALERT1 = 'orangered'
 C_ALERT2 = 'crimson'
 
+# Ensure input paths point to GDO data and output to ECMWF (TODO JC Move ECMWF netcdfs to input)
+CONFIG = config.Config(outdir= 'output')
+
+# Choose False for free selection of lat, lon, start and end, but ONLY using GDO data
+# Choose True for a restricted location/time selection, but you can view GDO or ECMWF
+RESTRICT_DATA_SELECTION = False
+
+# If RESTRICT_DATA_SELECTION=True, use these arguments
 DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231'),
               'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231')}
 
+# If RESTRICT_DATA_SELECTION=True and we're viewing 
 SMA_LEVEL_DEFAULT = 'zscore_swvl3'
 
-RESTRICT_DATA_SELECTION = False
 
 st.set_page_config(layout="wide")
 
@@ -73,8 +80,8 @@ def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,w
     return fig, ax
 
 @st.cache(hash_funcs={dri.DroughtIndex: id},allow_output_mutation=True)
-def load_index(index: dri.DroughtIndex,cfg: config.Config,aa:config.AnalysisArgs):
-    idx = index(cfg,aa)
+def load_index(index: dri.DroughtIndex,aa:config.AnalysisArgs):
+    idx = index(CONFIG,aa)
     idx.download()
     idx.process()
     return idx
@@ -92,7 +99,7 @@ def load_indices(cdi: dri.CDI):
     return spi_ecmwf, spi_gdo, sma_ecmwf, sma_gdo, fapar
 
 @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
-def load_cdi(aa: config.AnalysisArgs,cf: config.Config,source,sma_var):
+def load_cdi(aa: config.AnalysisArgs,source,sma_var):
     aa_cdi = config.CDIArgs(
         latitude=aa.latitude,
         longitude=aa.longitude,
@@ -102,7 +109,7 @@ def load_cdi(aa: config.AnalysisArgs,cf: config.Config,source,sma_var):
         sma_source=source,
         sma_var=sma_var
     )
-    cdi = load_index(dri.CDI,cf,aa_cdi)
+    cdi = load_index(dri.CDI,CONFIG,aa_cdi)
     return cdi
 
 # @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
@@ -132,8 +139,6 @@ def draw_map(aa):
             'zoom': 7},
         showlegend = False)
     return fig
-
-cf = config.Config(outdir= 'output')
 
 plot_options = {'SPI (ECMWF)':False,
                 'SPI (GDO)': False,
@@ -165,11 +170,11 @@ with st.sidebar:
             aa = DOWNLOADED['SE England, 2020-2022']
 
     # Pre-download CDI options for speed
-    cdi_gdo = load_cdi(aa,cf,'GDO','smant')
+    cdi_gdo = load_cdi(aa,'GDO','smant')
 
     # Only do ECMWF if data selection is restricted
     if RESTRICT_DATA_SELECTION:
-        cdi_ecmwf = load_cdi(aa,cf,'ECMWF',SMA_LEVEL_DEFAULT)
+        cdi_ecmwf = load_cdi(aa,'ECMWF',SMA_LEVEL_DEFAULT)
         view = st.radio('View mode', ['CDI Breakdown','Index Comparison'])
     else:
         view = 'CDI Breakdown'
@@ -181,7 +186,7 @@ with st.sidebar:
             sma_var = st.selectbox('Soil Water Indicator Level',['zscore_swvl' + str(i) for i in ['1','2','3','4']])
 
             # Need to re-initialise the object using the selected layer
-            cdi_obj = cdi_ecmwf if sma_var == SMA_LEVEL_DEFAULT else load_cdi(aa,cf,'ECMWF',sma_var)
+            cdi_obj = cdi_ecmwf if sma_var == SMA_LEVEL_DEFAULT else load_cdi(aa,'ECMWF',sma_var)
 
         elif sma_source=='GDO':
             # Re-use the object initialised earlier

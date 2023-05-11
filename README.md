@@ -21,7 +21,7 @@ From the above link, download files and store in folders as follows:
 - All within an 'input' directory as defined in config.py
 - input/smant/ -> download in here all years under 'Ensemble Soil Moisture Anomaly' and 'Ensemble Soil Moisture Anomaly (2M...'
 - input/fpanv/ -> download in here all years under 'FAPAR Anomaly' and 'FAPAR Anomaly (VIIRS)'
-- input/spg03. -> download in here all years under 'Standardised Precipitation Index, 03-month accumulation period'
+- input/spg03/ -> download in here all years under 'Standardised Precipitation Index, 03-month accumulation period'
 
 ## Testing climate indices
 
@@ -40,11 +40,12 @@ key: xxxx
 Script to generate a web app to view and interact with Index input and output data.
 To run:
 - ensure streamlit=1.8.1 is installed in your environmnt
-- change 'OUTPUT_DIR' to location of downloaded netcdf files from ECMWF and output JSON files
-- the 'DOWNLOADED' constant is a dictionary containing the details of data which has already been downloaded. I recommend downloading the required data for a number of test case CDI's using the test_drought script, because the web app will hang if you try to download data while that's running. Bear in mind that the dates of the individual index data will not be the same as the arguments specified here, as the CDI requires longer time-periods of indices.
+- ensure CONFIG constant is set up correctly (i.e. correct output path to ECMWF netcdfs, and input path to GDO)
+- set RESTRICT_DATA_SELECTION to True to view pre-computed GDO and ECMWF data, or False to select anywhere/time using only GDO data.
+- the 'DOWNLOADED' constant is a dictionary containing the details of data which has already been downloaded. I recommend downloading the required data for a number of test case CDI's using the test_drought script, because the web app will hang if you try to download data while that's running. Bear in mind that the dates of individual index data will not be the same as the arguments specified for the CDI, as the CDI requires historical data.
 - in the command line, activate climate-env
 - enter 'streamlit run index_viewer.py'
-The web app will start up in a window in your browser.
+The web app will start up in a window in your browser (check the terminal to see which localhost it's using.)
 
 
 
