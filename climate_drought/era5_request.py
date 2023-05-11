@@ -16,7 +16,6 @@ import dask
 from dask.distributed import Client
 import fsspec
 import pathlib
-import s3fs
 import ujson
 import zarr
 
@@ -40,20 +39,19 @@ class ERA5Request():
     - baseline = True: a monthly mean over a long time period to form the mean or baseline against which anomalies can be computed
     - baseline = False: a monthly or hourly value to retrieve data over shorter timescales
     """
+    def __init__(self, variables, fname_out, args: config.AnalysisArgs, config: config.Config,
+                 start_date, end_date, aws=False, monthly=True):
 
-    def __init__(self, variables, fname_out, args: config.AnalysisArgs, config: config.Config, baseline=False,
-                 aws=False, monthly=True):
         self.latitude = args.latitude
         self.longitude = args.longitude
-        self.start_date = config.baseline_start if baseline else args.start_date
-        self.end_date = config.baseline_end if baseline else args.end_date
+        self.start_date = start_date
+        self.end_date = end_date
         self.variables = variables
         self.working_dir = config.outdir
         self.fname_out = fname_out
         self.verbose = config.verbose
+        self.monthly = monthly
         self.aws = aws
-        self.monthly = baseline or monthly
-
 
 class ERA5Download():
     """
@@ -92,9 +90,12 @@ class ERA5Download():
         :return: path to the file that will be downloaded
         """
         freq = 'monthly' if self.req.monthly else 'hourly'
-        file_str = "{sd}-{ed}_{fq}_{la}_{lo}".format(sd=self.req.start_date,
-                                                     ed=self.req.end_date, fq=freq, la=self.req.latitude,
-                                                     lo=self.req.longitude)
+        file_str = "{sd}-{ed}_{la}_{lo}_{fq}".format(sd=self.req.start_date,
+                                                     ed=self.req.end_date,
+                                                     la=self.req.latitude,
+                                                     lo=self.req.longitude,
+                                                     fq=freq)
+    
         # Extra identifier for AWS downloaded ERA5 data
         if not self.req.aws:
             aws = ''
