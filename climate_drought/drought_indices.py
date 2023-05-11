@@ -527,6 +527,8 @@ class SMA_ECMWF(DroughtIndex):
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
+        self.data = swv_dekads
+
         return swv_dekads
 
 class SMA_GDO(GDODroughtIndex):

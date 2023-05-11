@@ -32,6 +32,18 @@ DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','
 SMA_LEVEL_DEFAULT = 'zscore_swvl3'
 
 
+C_WATCH = 'gold'
+C_WARNING = 'darkorange'
+C_ALERT1 = 'orangered'
+C_ALERT2 = 'crimson'
+
+DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231'),
+              'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231')}
+
+SMA_LEVEL_DEFAULT = 'zscore_swvl3'
+
+RESTRICT_DATA_SELECTION = False
+
 st.set_page_config(layout="wide")
 
 def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,warning_var=None):
