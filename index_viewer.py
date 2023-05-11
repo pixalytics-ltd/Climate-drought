@@ -22,7 +22,7 @@ CONFIG = config.Config(outdir= 'output')
 
 # Choose False for free selection of lat, lon, start and end, but ONLY using GDO data
 # Choose True for a restricted location/time selection, but you can view GDO or ECMWF
-RESTRICT_DATA_SELECTION = False
+RESTRICT_DATA_SELECTION = True
 
 # If RESTRICT_DATA_SELECTION=True, use these arguments
 DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231'),
@@ -30,19 +30,6 @@ DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','
 
 # If RESTRICT_DATA_SELECTION=True and we're viewing 
 SMA_LEVEL_DEFAULT = 'zscore_swvl3'
-
-
-C_WATCH = 'gold'
-C_WARNING = 'darkorange'
-C_ALERT1 = 'orangered'
-C_ALERT2 = 'crimson'
-
-DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231'),
-              'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231')}
-
-SMA_LEVEL_DEFAULT = 'zscore_swvl3'
-
-RESTRICT_DATA_SELECTION = False
 
 st.set_page_config(layout="wide")
 
@@ -121,7 +108,7 @@ def load_cdi(aa: config.AnalysisArgs,source,sma_var):
         sma_source=source,
         sma_var=sma_var
     )
-    cdi = load_index(dri.CDI,CONFIG,aa_cdi)
+    cdi = load_index(dri.CDI,aa_cdi)
     return cdi
 
 # @st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
