@@ -1,10 +1,9 @@
 
 import datetime
 import pandas as pd
-import argparse
+import os
 import numpy as np
 import xarray as xr
-
 
 def daterange(sdate, edate, rtv):
     """
@@ -88,15 +87,6 @@ def crop_df(df,sdate,edate) -> pd.DataFrame:
 
 def nearest_dekad(day: int) -> int:
     return 1 if day<11 else (11 if day<21 else 21)
-
-def nc2xr(filepath):
-    """
-    Open a dataset safely and close the file afterwards.
-    """
-    with xr.open_dataset(filepath) as ds:
-        return_ds = ds.load()
-
-    return return_ds
 
 class setup_args:
     working_dir = '/data/webservice/CLIMATE'
