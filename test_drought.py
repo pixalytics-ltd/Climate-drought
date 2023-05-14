@@ -53,7 +53,7 @@ class DROUGHT:
 
     def run_index(self):
 
-        # Setup defualt input sources
+        # Setup default input sources
         if self.product == "SPI":
             self.product = "SPI_ECMWF"
         elif self.product == "SMA":

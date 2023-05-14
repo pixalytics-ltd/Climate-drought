@@ -691,9 +691,11 @@ class CDI(DroughtIndex):
         self.time_dekads = utils.dti_dekads(sdate_spi,args.end_date)
 
     def download(self):
-        self.spi.download()
-        self.sma.download()
-        self.fpr.download()
+        spi_file = self.spi.download()
+        sma_file = self.sma.download()
+        fpr_file = self.fpr.download()
+
+        return[spi_file,sma_file,fpr_file]
         
     def process(self):
 

@@ -12,6 +12,7 @@ dependencies:
   - streamlit=1.8.1
   - plotly
   - pip:
+    - altair==4
     - cdsapi
     - covjson-pydantic
     - dask[distributed]

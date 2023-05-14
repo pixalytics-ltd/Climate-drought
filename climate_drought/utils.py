@@ -90,15 +90,18 @@ def nearest_dekad(day: int) -> int:
 
 class setup_args:
     working_dir = '/data/webservice/CLIMATE'
+    indir = '/data/webservice/CLIMATE/input'
     outdir = '/data/webservice/CLIMATE'
     verbose=True
     accum=True
     latitude=52.5
     longitude=1.25
-    product='SPI'
+    index='SPI'
     plot=False
     type='none'
     start_date = '20200101'
     end_date ='20221231'
+    aws = False
+    oformat = "GeoJSON"
 
 
