@@ -7,6 +7,8 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import plotly.graph_objects as go
 from typing import List
+import warnings
+warnings.filterwarnings('ignore')
 
 # Links from Climate-drought repository
 from climate_drought import config, drought_indices as dri
@@ -25,8 +27,8 @@ CONFIG = config.Config(outdir= 'output')
 RESTRICT_DATA_SELECTION = True
 
 # If RESTRICT_DATA_SELECTION=True, use these arguments
-DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231'),
-              'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231')}
+DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20220121','20221231'),
+              'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20220121','20221231')}
 
 # If RESTRICT_DATA_SELECTION=True and we're viewing 
 SMA_LEVEL_DEFAULT = 'zscore_swvl3'
@@ -85,7 +87,7 @@ def load_index(index: dri.DroughtIndex,aa:config.AnalysisArgs):
     idx.process()
     return idx
 
-#@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
+@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
 def load_indices(cdi: dri.CDI):
 
     # Make sure everything is already downloaded else it'll take ages
@@ -97,7 +99,7 @@ def load_indices(cdi: dri.CDI):
 
     return spi_ecmwf, spi_gdo, sma_ecmwf, sma_gdo, fapar
 
-@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
+#@st.cache(hash_funcs={pd.DataFrame: id}, allow_output_mutation=True)
 def load_cdi(aa: config.AnalysisArgs,source,sma_var):
     aa_cdi = config.CDIArgs(
         latitude=aa.latitude,
