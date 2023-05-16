@@ -10,6 +10,7 @@ from dateutil.relativedelta import relativedelta
 # JSON export
 import json
 import geojson
+import orjson
 from covjson_pydantic.reference_system import ReferenceSystem
 from covjson_pydantic.domain import Domain
 from covjson_pydantic.ndarray import NdArray
@@ -128,34 +129,155 @@ class DroughtIndex(ABC):
 
         # Extract dates and values
         dates = df_filtered.index.values
-        if self.args.index == "SMA":
-            sm_name = "Soil Moisture"
-            self.logger.warning("Just outputting the surface, level 1, soil moisture and associated anomaly")
 
-            sm_vals = df_filtered.swvl1.values
-            pvals = []
-            for val in sm_vals:
-                pvals.append(float(val))
-            sma_name = self.args.index
-            sma_vals = df_filtered.zscore_swvl1.values
-            svals = []
-            for val in sma_vals:
-                svals.append(float(val))
-            num_vals = len(sma_vals)
+        if "SPI" in self.args.indicator or "CDI" in self.args.indicator:
+            #print(df_filtered)
+            if "CDI" in self.args.indicator:
+                spi_name = self.args.indicator
+                spi_vals = df_filtered.spg03.values
+                pvals = []
+                for val in spi_vals:
+                    pvals.append(float(val))
+            else: #SPI
+                spi_name = self.args.indicator
+                spi_vals = df_filtered.spi.values
+                svals = []
+                for val in spi_vals:
+                    svals.append(float(val))
+                num_vals = len(spi_vals)
+
+                precip_name = "Precipitation"
+
+                precip_vals = df_filtered.tp.values
+                pvals = []
+                for val in precip_vals:
+                    pvals.append(float(val))
+
+                parameters = {
+                    precip_name: Parameter(
+                        type="Parameter",
+                        description={
+                            "en": "Total Precipitation"
+                        },
+                        unit={
+                            "symbol": "m"
+                        },
+                        observedProperty={
+                            "id": "https://vocab.nerc.ac.uk/standard_name/precipitation_amount/",
+                            "label": {
+                                "en": "Precipition_amount"
+                            }
+                        }
+                    ),
+                    spi_name: Parameter(
+                        type="Parameter",
+                        description={
+                            "en": "Standard Precipitation Index"
+                        },
+                        unit={
+                            "symbol": "unitless"
+                        },
+                        observedProperty={
+                            "id": "https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi",
+                            "label": {
+                                "en": "Standard Precipitation Index"
+                            }
+                        }
+                    ),
+                }
+
+                ranges = {
+                    precip_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
+                    spi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals)
+                }
+
+        if "SMA" in self.args.indicator or "CDI" in self.args.indicator:
+            if "CDI" in self.args.indicator:
+                sma_name = self.args.indicator
+                sma_vals = df_filtered.smant.values
+                svals = []
+                for val in sma_vals:
+                    svals.append(float(val))
+            else:
+                sm_name = "Soil Moisture"
+                self.logger.warning("Just outputting the surface, level 1, soil moisture and associated anomaly")
+
+                sm_vals = df_filtered.swvl1.values
+                pvals = []
+                for val in sm_vals:
+                    pvals.append(float(val))
+                sma_name = self.args.indicator
+                sma_vals = df_filtered.zscore_swvl1.values
+                svals = []
+                for val in sma_vals:
+                    svals.append(float(val))
+                num_vals = len(sma_vals)
+
+                parameters = {
+                    sm_name: Parameter(
+                        type="Parameter",
+                        description={
+                            "en": "Surface Soil Moisture"
+                        },
+                        unit={
+                            "symbol": "m3/m3"
+                        },
+                        observedProperty={
+                            "id": "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables",
+                            "label": {
+                                "en": "Soil_moisture_amount"
+                            }
+                        }
+                    ),
+                    sma_name: Parameter(
+                        type="Parameter",
+                        description={
+                            "en": "Surface Soil Moisture Anomaly"
+                        },
+                        unit={
+                            "symbol": "unitless"
+                        },
+                        observedProperty={
+                            "id": "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables",
+                            "label": {
+                                "en": "Surface Soil Moisture Anomaly"
+                            }
+                        }
+                    ),
+                }
+
+                ranges = {
+                    sm_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
+                    sma_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals)
+                }
+
+        if self.args.indicator == "CDI":
+            cdi_name = self.args.indicator
+            cdi_vals = df_filtered.CDI.values
+            cvals = []
+            for val in cdi_vals:
+                cvals.append(float(val))
+            num_vals = len(cdi_vals)
+
+            fpv_name = "fAPAR anomaly"
+            fpv_vals = df_filtered.fpanv.values
+            fvals = []
+            for val in fpv_vals:
+                fvals.append(float(val))
 
             parameters = {
-                sm_name: Parameter(
+                spi_name: Parameter(
                     type="Parameter",
                     description={
-                        "en": "Surface Soil Moisture"
+                        "en": "Standard Precipitation Index"
                     },
                     unit={
-                        "symbol": "m3/m3"
+                        "symbol": "unitless"
                     },
                     observedProperty={
-                        "id": "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables",
+                        "id": "https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi",
                         "label": {
-                            "en": "Soil_moisture_amount"
+                            "en": "Standard Precipitation Index"
                         }
                     }
                 ),
@@ -174,62 +296,43 @@ class DroughtIndex(ABC):
                         }
                     }
                 ),
-            }
-
-            ranges = {
-                sm_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
-                sma_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals)
-            }
-        else:
-            precip_name = "Precipitation"
-
-            precip_vals = df_filtered.tp.values
-            pvals = []
-            for val in precip_vals:
-                pvals.append(float(val))
-            spi_name = self.args.index
-            spi_vals = df_filtered.spi.values
-            svals = []
-            for val in spi_vals:
-                svals.append(float(val))
-            num_vals = len(spi_vals)
-
-            parameters = {
-                precip_name: Parameter(
+                fpv_name: Parameter(
                     type="Parameter",
                     description={
-                        "en": "Total Precipitation"
-                    },
-                    unit={
-                        "symbol": "m"
-                    },
-                    observedProperty={
-                        "id": "https://vocab.nerc.ac.uk/standard_name/precipitation_amount/",
-                        "label": {
-                            "en": "Precipition_amount"
-                        }
-                    }
-                ),
-                spi_name: Parameter(
-                    type="Parameter",
-                    description={
-                        "en": "Standard Precipitation Index"
+                        "en": "fraction Absorbed Photosynthetically Active Radiation (fAPAR) Anomaly"
                     },
                     unit={
                         "symbol": "unitless"
                     },
                     observedProperty={
-                        "id": "https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi",
+                        "id": "https://xxx",
                         "label": {
-                            "en": "Standard Precipitation Index"
+                            "en": "fAPAR_anomaly"
                         }
                     }
                 ),
+                cdi_name: Parameter(
+                    type="Parameter",
+                    description={
+                        "en": "Combined Drought Indicator"
+                    },
+                    unit={
+                        "symbol": "unitless"
+                    },
+                    observedProperty={
+                        "id": "https://xxx",
+                        "label": {
+                            "en": "combined_drought_indicator"
+                        }
+                    }
+                )
             }
 
             ranges = {
-                precip_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
-                spi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals)
+                spi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
+                sma_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals),
+                fpv_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=fvals),
+                cdi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=cvals)
             }
 
         # Create Structure
@@ -247,7 +350,9 @@ class DroughtIndex(ABC):
             ranges=ranges
         )
 
-        json_x = self.feature_collection.json(exclude_none=True, indent=True)
+        # TODO Indent option now fails
+        self.logger.warning("The CovJSON indenting option is no longer working")
+        json_x = self.feature_collection.json(exclude_none=True)#, indent=True)
         f = open(self.output_file_path, "w", encoding='utf-8')
         f.write(json_x)
 
@@ -335,7 +440,6 @@ class DroughtIndex(ABC):
     def generate_output(self) -> None:
         # Save JSON file
         ## TODO SL to finish implementation of CoverageJSON so can be chosen option
-        covjson = False
         if not os.path.isfile(self.output_file_path):
             oformat = self.args.oformat.lower()
             if "cov" in oformat:  # Generate CoverageJSON file
