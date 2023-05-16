@@ -34,7 +34,7 @@ class DROUGHT:
         self.config = config.Config(args.outdir,args.indir,args.verbose,aws=args.aws)
 
         if args.product == 'CDI':
-            self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date, args.sma_source)
+            self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date,args.sma_source,args.oformat)
         else:
             self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date,args.product,args.oformat)
 

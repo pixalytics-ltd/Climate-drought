@@ -103,5 +103,6 @@ class setup_args:
     end_date ='20221231'
     aws = False
     oformat = "GeoJSON"
+    sma_source = "GDO"
 
 
