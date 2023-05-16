@@ -22,7 +22,7 @@ dependencies:
     - jupyter-server-proxy
     - kerchunk
     - netcdf4
-    - numba
+    - numba==0.56.4
     - pygeometa
     - python-snappy
     - s3fs
