@@ -37,7 +37,6 @@ class DROUGHT:
             self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date,oformat=args.oformat)
         else:
             self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date,product=args.product,oformat=args.oformat)
-        print("Sam: {} {}".format(args.oformat,self.args.oformat))
 
         # Setup logging
         self.logger = logging.getLogger("test_drought")

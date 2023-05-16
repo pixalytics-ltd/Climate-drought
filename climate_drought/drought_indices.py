@@ -120,7 +120,7 @@ class DroughtIndex(ABC):
         with open(self.output_file_path, "w", encoding='utf-8') as outfile:
             geojson.dump(json_x, outfile, indent=4)
 
-    # TODO draft implementation - SMA just for surface and needs expanding for other indices
+    # TODO needs updating for all possible options
     def generate_covjson(self, df_filtered) -> None:
         """
          Generates CoverageJSON file for data
@@ -130,10 +130,13 @@ class DroughtIndex(ABC):
         # Extract dates and values
         dates = df_filtered.index.values
 
+        # Print dataframe
+        self.logger.debug("Data frame: ")
+        self.logger.debug(df_filtered)
+
         if "SPI" in self.args.indicator or "CDI" in self.args.indicator:
-            #print(df_filtered)
             if "CDI" in self.args.indicator:
-                spi_name = self.args.indicator
+                spi_name = "SPI"
                 spi_vals = df_filtered.spg03.values
                 pvals = []
                 for val in spi_vals:
@@ -193,7 +196,7 @@ class DroughtIndex(ABC):
 
         if "SMA" in self.args.indicator or "CDI" in self.args.indicator:
             if "CDI" in self.args.indicator:
-                sma_name = self.args.indicator
+                sma_name = "SMA"
                 sma_vals = df_filtered.smant.values
                 svals = []
                 for val in sma_vals:
@@ -328,6 +331,10 @@ class DroughtIndex(ABC):
                 )
             }
 
+            self.logger.debug("Parameters: ")
+            self.logger.debug(parameters)
+            self.logger.debug("Output datasets: SPI {} SMA {} FPV {} CDI {}".format(len(pvals),len(svals),len(fvals),len(cvals)))
+
             ranges = {
                 spi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
                 sma_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals),
@@ -341,7 +348,7 @@ class DroughtIndex(ABC):
                 domainType="PointSeries",
                 axes={
                     "x": {"dataType": "float", "values": [self.args.longitude]},
-                    "y": {"values": [self.args.latitude]},
+                    "y": {"dataType": "float", "values": [self.args.latitude]},
                     "t": {"dataType": "datetime", "values": list(dates)}
                 },
             ),
@@ -351,7 +358,7 @@ class DroughtIndex(ABC):
         )
 
         # TODO Indent option now fails
-        self.logger.warning("The CovJSON indenting option is no longer working")
+        self.logger.warning("The CovJSON indenting option is no longer working - need to look at")
         json_x = self.feature_collection.json(exclude_none=True)#, indent=True)
         f = open(self.output_file_path, "w", encoding='utf-8')
         f.write(json_x)
