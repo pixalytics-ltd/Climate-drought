@@ -17,7 +17,7 @@ from covjson_pydantic.coverage import Coverage
 from covjson_pydantic.parameter import Parameter, ParameterGroup
 
 # Drought indices calculator
-from climate_drought import indices, config, utils, era5_request as erq
+from climate_drought import indices, config, utils, era5_request as erq, gdo_download as gdo
 
 # pygeometa for OGC API record creation
 import yaml
@@ -27,8 +27,7 @@ from pygeometa.core import read_mcf
 from pygeometa.schemas.ogcapi_records import OGCAPIRecordOutputSchema
 
 from abc import ABC, abstractclassmethod
-from typing import List
-
+from typing import List, Union
 
 class DroughtIndex(ABC):
     """
@@ -280,18 +279,29 @@ class GDODroughtIndex(DroughtIndex):
     """
     Specialisation of the Drought class for processing pre-computed indices from the Global Drought Observatory.
     """
-    def __init__(self, config: config.Config, args: config.AnalysisArgs, fileloc, filestr):
+    def __init__(self, config: config.Config, args: config.AnalysisArgs, prod_code: Union[List[str], str]):
         super().__init__(config,args)
-        self.fileloc = config.indir + fileloc
-        self.filelist = glob.glob(self.fileloc + filestr)
+        self.prod_code = [prod_code] if isinstance(prod_code,str) else prod_code
+        self.fileloc = config.indir + "/" + self.prod_code[0]
+
+        # Create GDO download objects so we can see what the filenames are
+        
+        # create list of years to download data for
+        years = np.arange(int(self.args.start_date[:4]),int(self.args.end_date[:4])+1)
+
+        files = []
+        for y in years:
+            for pc in self.prod_code:
+                files.append(gdo.GDODownload(y,pc,logger=self.logger))
+
+        self.files = files
+        self.filelist = [self.fileloc + "/" + f.filename for f in files]
 
     def download(self):
-        # Do nothing - data already downloaded
-        if len(self.filelist) > 0:
-            self.logger.info("Downloaded files available.")
-        else:
-            self.logger.info("Cannot find downloaded files in folder {}".format(self.fileloc))
-        return self.fileloc
+
+        for f in self.files:
+            f.download(self.fileloc)
+            
 
     def load_and_trim(self):
         # Open all dses and merge
@@ -408,7 +418,7 @@ class SPI_GDO(GDODroughtIndex):
     Specialisation of the GDODrought class for processing pre-computed photosynthetically active radiation anomaly data from GDO.
     """
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
-        super().__init__(config,args,'/spg03','/spg03*.nc')
+        super().__init__(config,args,'spg03')
 
     def process(self):
         df = super().load_and_trim()
