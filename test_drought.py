@@ -34,9 +34,9 @@ class DROUGHT:
         self.config = config.Config(args.outdir,args.indir,args.verbose,aws=args.aws)
 
         if args.product == 'CDI':
-            self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date, args.sma_source)
+            self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date,oformat=args.oformat)
         else:
-            self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date,args.product,args.oformat)
+            self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date,product=args.product,oformat=args.oformat)
 
         # Setup logging
         self.logger = logging.getLogger("test_drought")
@@ -53,7 +53,7 @@ class DROUGHT:
 
     def run_index(self):
 
-        # Setup defualt input sources
+        # Setup default input sources
         if self.product == "SPI":
             self.product = "SPI_ECMWF"
         elif self.product == "SMA":
@@ -70,7 +70,7 @@ class DROUGHT:
         else:
             idx.download()
             idx.process()
-            self.logger.info("Downloading and processing complete for '{}' completed.".format(idx.output_file_path))
+            self.logger.info("Downloading and processing complete for '{}' completed with format {}.".format(idx.output_file_path, self.args.oformat))
 
         if os.path.exists(idx.output_file_path):
             exit_code = 1
