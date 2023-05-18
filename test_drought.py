@@ -31,7 +31,7 @@ class DROUGHT:
 
         # Transfer args
         self.product = args.product
-        self.config = config.Config(args.outdir,args.indir,args.verbose,aws=args.aws)
+        self.config = config.Config(args.outdir,args.indir,args.verbose,aws=args.aws,era_daily=args.era_daily)
 
         if args.product == 'CDI':
             self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date,oformat=args.oformat)
@@ -116,6 +116,7 @@ def main():
     parser.add_argument("-s", "--sdate", type=str, dest="start_date", default='20200116', help="Start date as YYYYMMDD")
     parser.add_argument("-e", "--edate", type=str, dest="end_date", default='20200410', help="End date as YYYYMMDD")
     parser.add_argument("-S", "--smasrc", type=str, dest="sma_source", default='GDO', help="'GDO' or 'ECMWF")
+    parser.add_argument("-d", "--eradaily", type=bool, dest="era_daily", default=False)
 
 
     # define arguments
