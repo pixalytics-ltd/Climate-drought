@@ -24,7 +24,7 @@ CONFIG = config.Config(outdir= 'output')
 
 # Choose False for free selection of lat, lon, start and end, but ONLY using GDO data
 # Choose True for a restricted location/time selection, but you can view GDO or ECMWF
-RESTRICT_DATA_SELECTION = True
+RESTRICT_DATA_SELECTION = False
 
 # If RESTRICT_DATA_SELECTION=True, use these arguments
 DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20220121','20221231'),
