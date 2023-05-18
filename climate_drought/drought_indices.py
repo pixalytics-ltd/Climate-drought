@@ -506,7 +506,15 @@ class SPI_ECMWF(DroughtIndex):
         super().__init__(config, args)
         
         # create era5 request object
-        request = erq.ERA5Request(erq.PRECIP_VARIABLES, 'precip', self.args, self.config, start_date=config.baseline_start, end_date=config.baseline_end, aws=self.config.aws)
+        request = erq.ERA5Request(
+            erq.PRECIP_VARIABLES,
+            'precip',
+            self.args,
+            self.config, 
+            start_date=config.baseline_start,
+            end_date=config.baseline_end,
+            frequency=erq.Freq.MONTHLY,
+            aws=self.config.aws)
 
         # initialise the download object using the request, but don't download yet
         self.download_obj = erq.ERA5Download(request,self.logger)
@@ -636,7 +644,8 @@ class SMA_ECMWF(DroughtIndex):
             self.args,
             self.config,
             start_date=config.baseline_start,
-            end_date=config.baseline_end)
+            end_date=config.baseline_end,
+            frequency=erq.Freq.MONTHLY)
         
         self.download_obj_baseline = erq.ERA5Download(request_baseline, self.logger)
 
@@ -648,7 +657,7 @@ class SMA_ECMWF(DroughtIndex):
             self.config,
             args.start_date,
             args.end_date,
-            monthly=False)
+            frequency=erq.Freq.DAILY if self.config.era_daily else erq.Freq.HOURLY)
         
         self.download_obj_hourly = erq.ERA5Download(request_shorterm, self.logger)
     
