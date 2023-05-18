@@ -12,6 +12,7 @@ dependencies:
   - streamlit=1.8.1
   - plotly
   - pip:
+    - altair==4
     - cdsapi
     - covjson-pydantic
     - dask[distributed]
@@ -21,7 +22,7 @@ dependencies:
     - jupyter-server-proxy
     - kerchunk
     - netcdf4
-    - numba
+    - numba==0.56.4
     - pygeometa
     - python-snappy
     - s3fs

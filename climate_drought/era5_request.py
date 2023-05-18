@@ -204,7 +204,7 @@ class ERA5Download():
             fs = fsspec.filesystem('s3', anon=True)
             sdate = int(self.req.start_date[0:4])
             # TODO SL Can we fix for later dates?
-            edate = 2020 + 1  # int(self.req.end_date[0:4])+1
+            edate = int(self.req.end_date[0:4])+1 #2020 + 1  #
             years = list(np.arange(sdate, edate, 1))
             self.logger.warning("AWS range restricted to {} to 2020 as the files after cause issues".format(sdate))
             months = list(np.arange(1, 12 + 1, 1))

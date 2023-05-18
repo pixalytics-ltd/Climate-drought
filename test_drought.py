@@ -34,9 +34,9 @@ class DROUGHT:
         self.config = config.Config(args.outdir,args.indir,args.verbose,aws=args.aws)
 
         if args.product == 'CDI':
-            self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date, args.sma_source)
+            self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date,oformat=args.oformat)
         else:
-            self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date)
+            self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date,product=args.product,oformat=args.oformat)
 
         # Setup logging
         self.logger = logging.getLogger("test_drought")
@@ -53,6 +53,12 @@ class DROUGHT:
 
     def run_index(self):
 
+        # Setup default input sources
+        if self.product == "SPI":
+            self.product = "SPI_ECMWF"
+        elif self.product == "SMA":
+            self.product = "SMA_ECMWF"
+
         self.logger.debug("Computing {idx} index for {sd} to {ed}.".format(idx=self.product, sd=self.config.baseline_start, ed=self.config.baseline_end))
 
         exit_code = 0
@@ -64,7 +70,7 @@ class DROUGHT:
         else:
             idx.download()
             idx.process()
-            self.logger.info("Downloading and processing complete for '{}' completed.".format(idx.output_file_path))
+            self.logger.info("Downloading and processing complete for '{}' completed with format {}.".format(idx.output_file_path, self.args.oformat))
 
         if os.path.exists(idx.output_file_path):
             exit_code = 1
@@ -105,6 +111,7 @@ def main():
     parser.add_argument("-y", "--latitude", type=float, dest="latitude")
     parser.add_argument("-x", "--longitude", type=float, dest="longitude")
     parser.add_argument("-p", "--product", type=str, dest="product", default='none')
+    parser.add_argument("-of", "--oformat", type=str, dest="oformat", default='GeoJSON')
     parser.add_argument("-t", "--type", type=str, dest="type", default='none')
     parser.add_argument("-s", "--sdate", type=str, dest="start_date", default='20200116', help="Start date as YYYYMMDD")
     parser.add_argument("-e", "--edate", type=str, dest="end_date", default='20200410', help="End date as YYYYMMDD")
