@@ -2,6 +2,8 @@ import os
 import logging
 
 from urllib.request import urlopen, urlretrieve
+import ssl
+
 
 URL="https://edo.jrc.ec.europa.eu/gdo/php/util/getData2download.php?year={year}&scale_id=gdo&prod_code={prod_code}&format=nc&action=getUrls"
 
@@ -47,6 +49,9 @@ class GDODownload():
 
     def download(self,output_folder):
 
+        ssl._create_default_https_context = ssl._create_unverified_context
+
+
         downloaded_filenames = []
         for url, filename in zip(self.urls,self.filenames):
             filepath = output_folder + "/" + filename
@@ -60,9 +65,10 @@ class GDODownload():
                 try:
                     urlretrieve(url,filename=filepath)
                     self.logger.info("Downloaded file from GDO: {}".format(filepath))
-                    downloaded_filenames(filepath)
-                except:
+                    downloaded_filenames.append(filepath)
+                except Exception as e:
                     self.logger.info("Could not download file: {}".format(filepath))
+                    self.logger.info("Error: {}".format(e))
         
         # update filenames with those which have been downloaded
         self.filenames = downloaded_filenames
