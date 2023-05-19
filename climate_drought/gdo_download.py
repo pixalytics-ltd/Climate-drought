@@ -36,12 +36,13 @@ class GDODownload():
             self.urls = [u.replace('\/','/').replace(" ", "%20") for u in urls if len(u)>0]
 
             # Get the name of the file to be downloaded from the end of the file address (so we can also save it under this name)
-            self.filenames = [u.split("/")[-1] for u in self.urls if len(u)>0]
+            self.files_to_download = [u.split("/")[-1] for u in self.urls if len(u)>0]
 
-            self.success = len(self.filenames) > 0
+            self.success = len(self.files_to_download) > 0
         except:
             self.success = False
 
+        self.filenames = []
         self.logger.info(("Successfully retrieved" if self.success else "Couldn't retrieve") + " URL for GDO file with year: {0}, prod_code {1}".format(year,prod_code))
 
         # if self.success:
@@ -51,26 +52,21 @@ class GDODownload():
 
         ssl._create_default_https_context = ssl._create_unverified_context
 
-
-        downloaded_filenames = []
-        for url, filename in zip(self.urls,self.filenames):
+        for url, filename in zip(self.urls,self.files_to_download):
             filepath = output_folder + "/" + filename
-
-            print(url)
-
             if os.path.isfile(filepath):
                 self.logger.info("File already exists at: {}".format(filepath))
-                downloaded_filenames.append(filepath)
             else:
                 try:
                     urlretrieve(url,filename=filepath)
                     self.logger.info("Downloaded file from GDO: {}".format(filepath))
-                    downloaded_filenames.append(filepath)
                 except Exception as e:
                     self.logger.info("Could not download file: {}".format(filepath))
                     self.logger.info("Error: {}".format(e))
-        
-        # update filenames with those which have been downloaded
-        self.filenames = downloaded_filenames
-        return downloaded_filenames
+            
+            # check
+            if os.path.isfile(filepath):
+                self.filenames.append(filename)
+
+        return self.filenames
         

@@ -483,29 +483,34 @@ class GDODroughtIndex(DroughtIndex):
         years = np.arange(int(self.args.start_date[:4]),int(self.args.end_date[:4])+1)
 
         dl_objs = []
-        filelist = []
         for y in years:
             for pc in self.prod_code:
                 obj = gdo.GDODownload(y,pc,logger=self.logger)
                 if obj.success:
                     dl_objs.append(obj)
-                    [filelist.append(self.fileloc + "/" + f) for f in obj.filenames]
 
         self.files = dl_objs
-        self.filelist = filelist
+        self.filelist = []
 
     def download(self):
 
+        filelist = []
         if not os.path.isdir(self.fileloc):
             os.mkdir(self.fileloc)
 
         for f in self.files:
-            f.download(self.fileloc)
+            filelist = filelist + f.download(self.fileloc)
+
+        self.filepaths = [self.fileloc + "/" + f for f in filelist]
             
     def load_and_trim(self):
+
+        if len(self.filepaths)==0:
+            self.logger.error('No files downloaded')
+
         # Open all dses and merge
         get_ds = lambda fname: xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['lat','lon','4326']) 
-        df = xr.merge(get_ds(fname) for fname in self.filelist).to_dataframe()
+        df = xr.merge(get_ds(fname) for fname in self.filepaths).to_dataframe()
 
         # Trim to required dates
         df = df.loc[(df.index >= self.args.start_date) & (df.index <= self.args.end_date)] 
@@ -749,8 +754,9 @@ class SMA_GDO(GDODroughtIndex):
 
         # smand is the modelled data and is available more recently than the long term time series of smant
         # replace missing smant values with smand and discard
-        df.smant.fillna(df.smand, inplace=True)
-        del df['smand']
+        if 'smand' in list(df.columns):
+            df.smant.fillna(df.smand, inplace=True)
+            del df['smand']
 
         # Fill any data gaps
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
