@@ -34,7 +34,7 @@ class DROUGHT:
         self.config = config.Config(args.outdir,args.indir,args.verbose,aws=args.aws,era_daily=args.era_daily)
 
         if args.product == 'CDI':
-            self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date,oformat=args.oformat)
+            self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date,oformat=args.oformat,spi_source=args.spi_source,sma_source=args.sma_source)
         else:
             self.args = config.AnalysisArgs(args.latitude,args.longitude,args.start_date,args.end_date,product=args.product,oformat=args.oformat)
 
@@ -115,9 +115,9 @@ def main():
     parser.add_argument("-t", "--type", type=str, dest="type", default='none')
     parser.add_argument("-s", "--sdate", type=str, dest="start_date", default='20200116', help="Start date as YYYYMMDD")
     parser.add_argument("-e", "--edate", type=str, dest="end_date", default='20200410', help="End date as YYYYMMDD")
-    parser.add_argument("-S", "--smasrc", type=str, dest="sma_source", default='GDO', help="'GDO' or 'ECMWF")
     parser.add_argument("-d", "--eradaily", type=bool, dest="era_daily", default=False)
-
+    parser.add_argument("-sma", "--smasrc", type=str, dest="sma_source", default='GDO', help="'GDO' or 'ECMWF'")
+    parser.add_argument("-spi", "--spisrc", type=str, dest="spi_source", default='GDO', help="'GDO' or 'ECMWF'")
 
     # define arguments
     args = parser.parse_args()
