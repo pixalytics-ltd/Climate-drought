@@ -14,14 +14,7 @@ Note: if the climate indices or pixutils respositories needs to be edited locall
 
 ## Using pre-calculated index data from GDO
 
-Fraction of Active Photosynthetically Active Radiation is obtained from a file downloaded manually from the Global Drought Observatory (GDO) where it has been precomputed. Soil moisture anomaly is either computed from ECMWF data, which takes a long time to request and download, or obtained directly from a precomputed file from GDO. These files must be downloaded for these indicies to be calculated.
-
-Data source: https://edo.jrc.ec.europa.eu/gdo/php/index.php?id=2112
-From the above link, download files and store in folders as follows:
-- All within an 'input' directory as defined in config.py
-- input/smant/ -> download in here all years under 'Ensemble Soil Moisture Anomaly' and 'Ensemble Soil Moisture Anomaly (2M...'
-- input/fpanv/ -> download in here all years under 'FAPAR Anomaly' and 'FAPAR Anomaly (VIIRS)'
-- input/spg03. -> download in here all years under 'Standardised Precipitation Index, 03-month accumulation period'
+Fraction of Active Photosynthetically Active Radiation is obtained from the Global Drought Observatory (GDO) where it has been precomputed. Soil moisture anomaly and SPI are either computed from ECMWF data, which takes a long time to request and download, or obtained directly from a precomputed file from GDO.
 
 ## Testing climate indices
 
