@@ -1,0 +1,31 @@
+name: climate_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - birdy
+  - gdal>=3.4.1
+  - matplotlib
+  - pip
+  - python=3.8.16
+  - xarray
+  - streamlit=1.8.1
+  - plotly
+  - pip:
+    - altair==4
+    - cdsapi
+    - covjson-pydantic
+    - dask[distributed]
+    - fsspec
+    - geojson
+    - h5py
+    - jupyter-server-proxy
+    - kerchunk
+    - netcdf4
+    - numba==0.56.4
+    - pygeometa
+    - python-snappy
+    - s3fs
+    - scipy
+    - sentinelsat
+prefix: ~/anaconda3/envs/climate_env

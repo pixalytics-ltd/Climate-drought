@@ -127,3 +127,15 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Pcyharm
+.idea
+
+# Linked & pip installed folders
+CLIMATE
+pixutils
+climate_indices
+src
+output
+input
+temp.json
