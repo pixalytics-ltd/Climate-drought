@@ -19,10 +19,11 @@ class CDIArgs(AnalysisArgs):
         self.oformat = oformat
 
 class Config():
-    def __init__(self,outdir='output',indir='input',verbose=True,baseline_start='19850101',baseline_end='20221231',aws=False):
+    def __init__(self,outdir='output',indir='input',verbose=True,baseline_start='19850101',baseline_end='20221231',aws=False,era_daily=False):
         self.outdir = outdir
         self.indir = indir
         self.verbose = verbose
         self.baseline_start = baseline_start
         self.baseline_end = baseline_end
         self.aws = aws
+        self.era_daily = era_daily
