@@ -12,7 +12,7 @@ class NClimGridParams(Enum):
     TEMPERATURE_MIN = 'tmin'
 
 
-def get_nclimgrid(lon, lat, start: str, end: str, param: NClimGridParams, out_filepath: str, cube=False):
+def get_nclimgrid(lon, lat, start: str, end: str, param: NClimGridParams, out_filepath: str):
     """"
     Returns a dataframe of the parameter 'param' from the nclimgrid_monthly collection
     :param start: the start date in the format 'YYYYMMDD'
