@@ -1,7 +1,10 @@
+import os
 import datetime
 import glob
 import numpy as np
 import pandas as pd
+from pandas.io.json import json_normalize
+import geojson
 import xarray as xr
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -19,13 +22,35 @@ C_ALERT1 = 'orangered'
 C_ALERT2 = 'crimson'
 
 DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231'),
-              'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231')}
+    'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231'),
+    'Canada CPilot Report, 2022-2023': config.AnalysisArgs(55.5, -99.1, '20220131', '20230331')}
 
 SMA_LEVEL_DEFAULT = 'zscore_swvl3'
 
-RESTRICT_DATA_SELECTION = False
+# Have pre-loaded locations rather than Latitude/Longitude inputs
+RESTRICT_DATA_SELECTION = True
+
+# Load precip anomaly data from SAFE software
+LOAD_SAFE = True
 
 st.set_page_config(layout="wide")
+
+# Load precip anomaly data from SAFE software
+def load_safe():
+    infile = os.path.join("input","cliteScenarios_rpc4.5_precipTotalMonPoints_MB_2023_2024.geojson")
+    if not os.path.exists(infile):
+        print("Could not load SAFE Software file")
+        safe_df = []
+    else:
+        df = json_normalize(geojson["features"])
+        coords = 'properties.geometry.coordinates'
+        df_safe = (df[coords].apply(lambda r: [(i[0],i[1]) for i in r[0]])
+            .apply(pd.Series).stack()
+            .reset_index(level=1).rename(columns={0:coords,"level_1":"point"})
+            .join(df.drop(coords,1), how='left')).reset_index(level=0)
+        df_safe[['lat','long']] = df_safe[coords].apply(pd.Series)
+        print("SAFE:",df_safe)
+
 
 def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,warning_var=None):
 
@@ -198,6 +223,9 @@ with st.sidebar:
         df_sma_ecmwf = cdi_ecmwf.sma.data
         df_sma_edo = cdi_gdo.sma.data
         df_fpr = cdi_gdo.fpr.data
+
+        if LOAD_SAFE:
+            df_safe = load_safe()
 
         #ds_swvl = load_era_soilmoisture(sma_ecmwf.download_obj_baseline.download_file_path)
 
