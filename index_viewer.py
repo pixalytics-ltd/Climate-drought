@@ -1,10 +1,7 @@
-import os
 import datetime
 import glob
 import numpy as np
 import pandas as pd
-from pandas.io.json import json_normalize
-import geojson
 import xarray as xr
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -34,22 +31,6 @@ RESTRICT_DATA_SELECTION = True
 LOAD_SAFE = True
 
 st.set_page_config(layout="wide")
-
-# Load precip anomaly data from SAFE software
-def load_safe():
-    infile = os.path.join("input","cliteScenarios_rpc4.5_precipTotalMonPoints_MB_2023_2024.geojson")
-    if not os.path.exists(infile):
-        print("Could not load SAFE Software file")
-        safe_df = []
-    else:
-        df = json_normalize(geojson["features"])
-        coords = 'properties.geometry.coordinates'
-        df_safe = (df[coords].apply(lambda r: [(i[0],i[1]) for i in r[0]])
-            .apply(pd.Series).stack()
-            .reset_index(level=1).rename(columns={0:coords,"level_1":"point"})
-            .join(df.drop(coords,1), how='left')).reset_index(level=0)
-        df_safe[['lat','long']] = df_safe[coords].apply(pd.Series)
-        print("SAFE:",df_safe)
 
 
 def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,warning_var=None):
