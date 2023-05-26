@@ -10,6 +10,7 @@ from typing import List
 
 # Links from Climate-drought repository
 from climate_drought import config, drought_indices as dri
+from climate_drought import load_local_file as local
 
 OUTPUT_DIR = 'output'
 
@@ -20,15 +21,13 @@ C_ALERT2 = 'crimson'
 
 DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231'),
     'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231'),
-    'Canada CPilot Report, 2022-2023': config.AnalysisArgs(55.5, -99.1, '20220131', '20230331')}
+    'Canada CPilot Report, 2022-2023': config.AnalysisArgs(55.5, -99.1, '20220131', '20230331'),
+    'Canada with SAFE Forecast data, 2022-2022+': config.AnalysisArgs(51.7, -102.6, '20220131', '20221231')}
 
 SMA_LEVEL_DEFAULT = 'zscore_swvl3'
 
 # Have pre-loaded locations rather than Latitude/Longitude inputs
 RESTRICT_DATA_SELECTION = True
-
-# Load precip anomaly data from SAFE software
-LOAD_SAFE = True
 
 st.set_page_config(layout="wide")
 
@@ -205,8 +204,9 @@ with st.sidebar:
         df_sma_edo = cdi_gdo.sma.data
         df_fpr = cdi_gdo.fpr.data
 
-        if LOAD_SAFE:
-            df_safe = load_safe()
+        # Load precip anomaly data from SAFE software
+        if aa.latitude == 51.7:
+            df_spi_ecmwf = local.load_safe(df_spi_ecmwf, lat_val=aa.latitude, lon_val=aa.longitude)
 
         #ds_swvl = load_era_soilmoisture(sma_ecmwf.download_obj_baseline.download_file_path)
 
