@@ -43,8 +43,8 @@ def load_safe(df_spi, lat_val = 50.0, lon_val = -97.5):
         df_safe = df_safe.loc[(df_safe['point'] == 1)]
         df_safe = df_safe.drop('point', 1)
 
-        # Convert units for precipitation from mm to m
-        tp = df_safe.tp_orig.values / 100.0
+        # Convert units for precipitation from mm/day to m
+        tp = df_safe.tp_orig.values / 1000.0 / 24.0
         df_safe['tp'] = tp
         df_safe['tp'] = df_safe['tp'].astype('float32')
         df_safe = df_safe.drop('tp_orig', 1)

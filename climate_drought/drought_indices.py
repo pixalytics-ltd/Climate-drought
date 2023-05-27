@@ -574,7 +574,7 @@ class SPI_ECMWF(DroughtIndex):
         self.logger.debug(datxr)
 
         # Convert to monthly sums and extract max of the available cells
-        if self.config.aws: # or any other setting which would result in more than monthy data
+        if self.config.aws: # or any other setting which would result in more than monthly data
             precip = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
         else:
             precip = datxr.tp.max(['latitude', 'longitude']).load()
