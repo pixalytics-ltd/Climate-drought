@@ -140,7 +140,8 @@ def draw_map(aa):
 
 cf = config.Config(outdir= 'output')
 
-plot_options = {'SPI (ECMWF)':False,
+plot_options = {'Precip (ECMWF)':False,
+                'SPI (ECMWF)':False,
                 'SPI (GDO)': False,
                 'SMA (ECMWF)':False,
                 'SMA (GDO)':False,
@@ -207,6 +208,7 @@ with st.sidebar:
         # Load precip anomaly data from SAFE software
         if aa.latitude == 51.7:
             df_spi_ecmwf = local.load_safe(df_spi_ecmwf, lat_val=aa.latitude, lon_val=aa.longitude)
+            aa.end_date = '20241231'
 
         #ds_swvl = load_era_soilmoisture(sma_ecmwf.download_obj_baseline.download_file_path)
 
@@ -226,6 +228,10 @@ with col1:
 figs = []
 
 if view == "Index Comparison":
+
+    if plot_options['Precip (ECMWF)']:
+        fig, ax = plot(df_spi_ecmwf,['tp'],'Precipitation (ECMWF)',warning=-1,warning_var='tp')
+        figs.append(fig)
 
     if plot_options['SPI (ECMWF)']:
         fig, ax = plot(df_spi_ecmwf,['spi'],'Standardised Precipitation Index (ECMWF)',warning=-1,warning_var='spi')
