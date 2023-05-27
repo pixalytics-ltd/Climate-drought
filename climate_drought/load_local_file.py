@@ -4,6 +4,12 @@ import pandas as pd
 import geojson
 from climate_drought import indices
 
+# Find the closest matching lat value
+def find_nearest(lons, lats, lon0, lat0):
+    idx = ((lons - lon0)**2+(lats - lat0)**2).argmin()
+    value_lat =  lats.flat[idx]
+    return value_lat
+
 # Load Canadian RCP data from SAFE software exported GeoJSON
 def load_safe(df_spi, lat_val = 50.0, lon_val = -97.5):
     infile = os.path.join("input","climateScenarios_rpc4.5_precipTotalMonPoints_MB_2023_2024.geojson")
@@ -36,17 +42,19 @@ def load_safe(df_spi, lat_val = 50.0, lon_val = -97.5):
         df_safe = df_safe.loc[(df_safe['longitude'] > lon_val-offset) & (df_safe['longitude'] < lon_val+offset) & (df_safe['latitude'] > lat_val-offset) & (df_safe['latitude'] < lat_val+offset) & (df_safe['point'] == 1)]
         df_safe = df_safe.drop('point', 1)
 
-
-        # Convert to xarray, extract max lat/lon then drop lat/lon
+        # Convert to xarray, extract closes lat/lon
         datxr = df_safe.to_xarray()
-        datxr = datxr.set_index(n_event=['longitude','latitude'])
-        print("Sam: ",datxr)
-        precip = datxr.tp.max(['latitude', 'longitude']).load()
-        df_safe = precip.to_dataframe()
-        #df_safe = df_safe.drop('latitude', 1).drop('longitude', 1)
+        latv = find_nearest(datxr.longitude.values,datxr.latitude.values, lon_val, lat_val)
+        datxr = datxr.where((datxr.latitude != latv), drop=True)
+        print("Sam: ", datxr)
+
+        # Convert back to dataframe and drop lat/lon
+        df_safe = datxr.to_dataframe()
+        df_safe = df_safe.drop('latitude', 1).drop('longitude', 1)
 
         # Add df_safe to existing df_spi dataset and extract precip
         print("df_safe: ",df_safe)
+        df_spi = df_spi.drop('spi',1)
         print("df_spi: ",df_spi)
         df = pd.concat([df_spi, df_safe])
         print("df: ",df)
@@ -64,7 +72,7 @@ def load_safe(df_spi, lat_val = 50.0, lon_val = -97.5):
 
 def main():
 
-    df_spi_reanalysis = pd.DataFrame([],columns=['time', 'tp', 'longitude', 'latitude'])
+    df_spi_reanalysis = pd.DataFrame([],columns=['time', 'tp'])
     df_safe = load_safe(df_spi_reanalysis)
     print("Loaded: ",df_safe)
 

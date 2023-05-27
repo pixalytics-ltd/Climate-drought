@@ -508,7 +508,7 @@ class GDODroughtIndex(DroughtIndex):
         if len(self.filepaths)==0:
             self.logger.error('No files downloaded')
 
-        # Open all dses and merge
+        # Open all dsets and merge
         get_ds = lambda fname: xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['lat','lon','4326']) 
         df = xr.merge(get_ds(fname) for fname in self.filepaths).to_dataframe()
 
