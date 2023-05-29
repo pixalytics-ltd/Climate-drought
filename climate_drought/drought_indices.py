@@ -108,14 +108,22 @@ class DroughtIndex(ABC):
         # Build GeoJSON object
         self.feature_collection = {"type": "FeatureCollection", "features": []}
 
-        for i in df_filtered.index:
+        print("DataFrame: ", df_filtered)
+        datevals=df_filtered.index.values
+
+        for count,i in enumerate(df_filtered.index):
             feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(self.args.longitude), float(self.args.latitude)]}, "properties": {}}
 
             # Extract columns as properties
             property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
             parsed = json.loads(property)
-            #print("Sam: ",parsed)
-            feature['properties'] = parsed
+            properties = {}
+            dateval = pd.to_datetime(str(datevals[count])).strftime("%d-%m-%Y")
+            print("Date: ", dateval)
+            properties.update({"_date": dateval})
+            properties.update(parsed)
+            print("Features properties: ",properties)
+            feature['properties'] = properties
 
             # Add feature
             self.feature_collection['features'].append(feature)
