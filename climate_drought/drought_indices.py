@@ -114,7 +114,7 @@ class DroughtIndex(ABC):
             # Extract columns as properties
             property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
             parsed = json.loads(property)
-            #print("Sam: ",parsed)
+            print("Sam: ",parsed)
             feature['properties'] = parsed
 
             # Add feature
