@@ -108,7 +108,7 @@ class DroughtIndex(ABC):
         # Build GeoJSON object
         self.feature_collection = {"type": "FeatureCollection", "features": []}
 
-        print("DataFrame: ", df_filtered)
+        self.logger.debug("DataFrame: ", df_filtered)
         datevals=df_filtered.index.values
 
         for count,i in enumerate(df_filtered.index):
@@ -119,12 +119,10 @@ class DroughtIndex(ABC):
             parsed = json.loads(property)
             properties = {}
             dateval = pd.to_datetime(str(datevals[count])).strftime("%Y-%m-%d")
-            print("Date: ", dateval)
             properties.update({"_date": dateval})
             properties.update(parsed)
-            print("Features properties: ",properties)
             feature['properties'] = properties
-
+            self.logger.debug("{} Feature {}: ".format(count, properties))
             # Add feature
             self.feature_collection['features'].append(feature)
         dump = geojson.dumps(self.feature_collection, indent=4)
