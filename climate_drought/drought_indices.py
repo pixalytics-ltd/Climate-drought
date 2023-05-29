@@ -118,7 +118,7 @@ class DroughtIndex(ABC):
             property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
             parsed = json.loads(property)
             properties = {}
-            dateval = pd.to_datetime(str(datevals[count])).strftime("%d-%m-%Y")
+            dateval = pd.to_datetime(str(datevals[count])).strftime("%Y-%m-%d")
             print("Date: ", dateval)
             properties.update({"_date": dateval})
             properties.update(parsed)
