@@ -1,8 +1,10 @@
 
 import datetime
 import pandas as pd
-import argparse
+import xarray as xr
 import numpy as np
+
+from shapely import Polygon
 
 
 def daterange(sdate, edate, rtv):
@@ -84,6 +86,40 @@ def crop_df(df,sdate,edate) -> pd.DataFrame:
     :param edate: pd.Timestamp or date format YYYYMMDD
     """
     return df.loc[(df.index >= sdate) & (df.index <= edate)]
+
+def crop_ds(ds,sdate,edate) -> xr.Dataset:
+    """
+    Crop a Dataframe between start and end dates
+    :param ds: xarray dataset with time coordinate
+    :param sdate: date format YYYYMMDD
+    :param edate: date format YYYYMMDD
+    """
+    return ds.where((ds.time >= pd.Timestamp(sdate)) & (ds.time <= pd.Timestamp(edate)),drop=True)
+
+def mask_ds(ds,lats,lons,ds_lat_name='lat',ds_lon_name='lon'):
+
+    pn = Polygon(tuple([(x,y) for x,y in zip(lons,lats)]))
+
+    ygrid = np.mean(np.diff(ds[ds_lat_name]))/2
+    xgrid = np.mean(np.diff(ds[ds_lon_name]))/2
+
+    def polycell(x,y):
+        tl = (x-xgrid,y+ygrid)
+        tr = (x+xgrid,y+ygrid)
+        bl = (x-xgrid,y-ygrid)
+        br = (x+xgrid,y-ygrid)
+        return Polygon((tl,tr,br,bl))
+    
+    def gridcellinpoly(x,y):
+        pc = polycell(x,y)
+        return pn.overlaps(pc)
+    
+    vgcip = np.vectorize(gridcellinpoly)
+    xx, yy = np.meshgrid(ds[ds_lon_name], ds[ds_lat_name])
+
+    ds['mask'] = ((ds_lat_name,ds_lon_name),vgcip(xx,yy))
+
+    return ds.where(ds.mask,drop=True)
 
 def nearest_dekad(day: int) -> int:
     return 1 if day<11 else (11 if day<21 else 21)
