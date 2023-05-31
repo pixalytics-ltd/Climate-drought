@@ -146,26 +146,16 @@ def mask_ds_poly(ds,lats,lons,ds_lat_name='lat',ds_lon_name='lon'):
         br = (x+xgrid,y-ygrid)
         return Polygon((tl,tr,br,bl))
     
-    def gridcellinpoly(x,y):
-        """
-        Compute if grid cell centred at x,y has any overlap with the area to be masked
-        """
-        pc = polycell(x,y)
-        return pn.overlaps(pc)
-    
-    # Vectorize method so we can perform it across 2D lat and lon grids
-    vgcip = np.vectorize(gridcellinpoly)
-
-    # Create 2D lat and lon grids
-    xx, yy = np.meshgrid(xnp,ynp)
+    mask = np.ones((len(xnp),len(ynp))) * np.nan
+    for i,x in (enumerate(xnp)):
+        for j,y in enumerate(ynp):
+            mask[i,j]=pn.overlaps(polycell(x,y))
     
     # Assign a mask to the ds
-    ds['mask'] = ((ds_lat_name,ds_lon_name),vgcip(xx,yy))
+    ds['mask'] = ((ds_lat_name,ds_lon_name),mask)
 
     if ds.mask.any():
         rtn = ds.where(ds.mask,drop=True)
-        if plot:
-            plot(ds.mask)
     else:
         print('No latitudes or longnitudes fall within the specified area')
         rtn = None
