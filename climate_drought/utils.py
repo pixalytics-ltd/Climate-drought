@@ -3,6 +3,7 @@ import datetime
 import pandas as pd
 import xarray as xr
 import numpy as np
+import matplotlib.pyplot as plt
 
 from shapely import Polygon
 
@@ -96,14 +97,28 @@ def crop_ds(ds,sdate,edate) -> xr.Dataset:
     """
     return ds.where((ds.time >= pd.Timestamp(sdate)) & (ds.time <= pd.Timestamp(edate)),drop=True)
 
-def mask_ds(ds,lats,lons,ds_lat_name='lat',ds_lon_name='lon'):
+def mask_ds(ds,lats,lons,ds_lat_name='lat',ds_lon_name='lon',plot=False):
+    """
+    Mask a xr.Dataset within Polygon defined by lat and lon coordinate lists.
+    :param ds: dataset with time, lat and lom dimensions
+    :param lats: list of latitude coordinates to mask within
+    :param lons: list of longiude coordinates to mask within (length must equal length of lats)
+    :param ds_lat_name: ds coordinate label for latitude if not 'lat'
+    :param ds_lon_name: ds coordinate label for longitue if not 'lon'
+    :param plot: boolean for whether to produce a plot showing masked area over grid cells
+    """
 
+    # Create a polygon of the area to be masked
     pn = Polygon(tuple([(x,y) for x,y in zip(lons,lats)]))
 
+    # Define the size of each grid cell
     ygrid = np.mean(np.diff(ds[ds_lat_name]))/2
     xgrid = np.mean(np.diff(ds[ds_lon_name]))/2
 
     def polycell(x,y):
+        """
+        Create a new polygon representing the grid cell with centre x,y
+        """
         tl = (x-xgrid,y+ygrid)
         tr = (x+xgrid,y+ygrid)
         bl = (x-xgrid,y-ygrid)
@@ -111,15 +126,43 @@ def mask_ds(ds,lats,lons,ds_lat_name='lat',ds_lon_name='lon'):
         return Polygon((tl,tr,br,bl))
     
     def gridcellinpoly(x,y):
+        """
+        Compute if grid cell centred at x,y has any overlap with the area to be masked
+        """
         pc = polycell(x,y)
         return pn.overlaps(pc)
     
+    # Vectorize method so we can perform it across 2D lat and lon grids
     vgcip = np.vectorize(gridcellinpoly)
-    xx, yy = np.meshgrid(ds[ds_lon_name], ds[ds_lat_name])
 
+    # Create 2D lat and lon grids
+    xx, yy = np.meshgrid(ds[ds_lon_name], ds[ds_lat_name])
+    
+    # Assign a mask to the ds
     ds['mask'] = ((ds_lat_name,ds_lon_name),vgcip(xx,yy))
 
-    return ds.where(ds.mask,drop=True)
+    def plot(mask):
+        fig, ax = plt.subplots()
+        ax.pcolor(ds.lon,ds.lat,mask)
+
+        px, py = pn.exterior.xy
+        ax.plot(px,py)
+
+        buffer = lambda arr: 0.5 * (np.max(arr) - np.min(arr))
+        ax.set_xlim([np.min(lons)-buffer(lons),np.max(lons)+buffer(lons)])
+        ax.set_ylim([np.min(lats)-buffer(lats),np.max(lats)+buffer(lats)])
+
+        ax.scatter(xx,yy)   
+
+    if ds.mask.any():
+        rtn = ds.where(ds.mask,drop=True)
+        if plot:
+            plot(ds.mask)
+    else:
+        print('No latitudes or longnitudes fall within the specified area')
+        rtn = None
+
+    return rtn
 
 def nearest_dekad(day: int) -> int:
     return 1 if day<11 else (11 if day<21 else 21)
