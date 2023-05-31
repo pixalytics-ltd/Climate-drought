@@ -97,7 +97,23 @@ def crop_ds(ds,sdate,edate) -> xr.Dataset:
     """
     return ds.where((ds.time >= pd.Timestamp(sdate)) & (ds.time <= pd.Timestamp(edate)),drop=True)
 
-def mask_ds(ds,lats,lons,ds_lat_name='lat',ds_lon_name='lon',plot=False):
+def mask_ds_bbox(ds,minlon,maxlon,minlat,maxlat,ds_lon_name='lon',ds_lat_name='lat'):
+    """
+    Mask a xr.Dataset within bounding box defined by lat and lon mimn and max
+    :param ds: dataset with time, lat and lon dimensions
+    :param minlat: Minimum latitude of bounding box
+    :param maxlat: Maximum latitude of bounding box
+    :param minlon: Minimum longitude of bounding box
+    :param maxlon: Maximum longitude of bounding box
+    :param ds_lat_name: ds coordinate label for latitude if not 'lat'
+    :param ds_lon_name: ds coordinate label for longitue if not 'lon'
+    """
+    valid_lon = (ds[ds_lon_name] >= minlon) & (ds[ds_lon_name] <= maxlon)
+    valid_lat = (ds[ds_lat_name] >= minlat) & (ds[ds_lat_name] <= maxlat)
+    return ds.where(valid_lat & valid_lon,drop=True)
+
+    
+def mask_ds_poly(ds,lats,lons,ds_lat_name='lat',ds_lon_name='lon'):
     """
     Mask a xr.Dataset within Polygon defined by lat and lon coordinate lists.
     :param ds: dataset with time, lat and lom dimensions
@@ -107,13 +123,18 @@ def mask_ds(ds,lats,lons,ds_lat_name='lat',ds_lon_name='lon',plot=False):
     :param ds_lon_name: ds coordinate label for longitue if not 'lon'
     :param plot: boolean for whether to produce a plot showing masked area over grid cells
     """
+    # Reduce ds to bounding box before cutting out polygon
+    ds = mask_ds_bbox(ds,np.min(lons),np.max(lons),np.min(lats),np.max(lats),ds_lon_name,ds_lat_name)
 
     # Create a polygon of the area to be masked
     pn = Polygon(tuple([(x,y) for x,y in zip(lons,lats)]))
 
+    xnp = ds[ds_lon_name].to_numpy()
+    ynp = ds[ds_lat_name].to_numpy()
+
     # Define the size of each grid cell
-    ygrid = np.mean(np.diff(ds[ds_lat_name]))/2
-    xgrid = np.mean(np.diff(ds[ds_lon_name]))/2
+    ygrid = np.round(xnp[1]-xnp[0],2)/2#np.mean(np.diff(xnp))/2
+    xgrid = np.round(ynp[1]-ynp[0],2)/2#np.mean(np.diff(ynp))/2
 
     def polycell(x,y):
         """
@@ -136,23 +157,10 @@ def mask_ds(ds,lats,lons,ds_lat_name='lat',ds_lon_name='lon',plot=False):
     vgcip = np.vectorize(gridcellinpoly)
 
     # Create 2D lat and lon grids
-    xx, yy = np.meshgrid(ds[ds_lon_name], ds[ds_lat_name])
+    xx, yy = np.meshgrid(xnp,ynp)
     
     # Assign a mask to the ds
     ds['mask'] = ((ds_lat_name,ds_lon_name),vgcip(xx,yy))
-
-    def plot(mask):
-        fig, ax = plt.subplots()
-        ax.pcolor(ds.lon,ds.lat,mask)
-
-        px, py = pn.exterior.xy
-        ax.plot(px,py)
-
-        buffer = lambda arr: 0.5 * (np.max(arr) - np.min(arr))
-        ax.set_xlim([np.min(lons)-buffer(lons),np.max(lons)+buffer(lons)])
-        ax.set_ylim([np.min(lats)-buffer(lats),np.max(lats)+buffer(lats)])
-
-        ax.scatter(xx,yy)   
 
     if ds.mask.any():
         rtn = ds.where(ds.mask,drop=True)
