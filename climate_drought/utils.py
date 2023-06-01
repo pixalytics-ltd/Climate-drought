@@ -97,7 +97,7 @@ def crop_ds(ds,sdate,edate) -> xr.Dataset:
     """
     return ds.where((ds.time >= pd.Timestamp(sdate)) & (ds.time <= pd.Timestamp(edate)),drop=True)
 
-def mask_ds_bbox(ds,minlon,maxlon,minlat,maxlat,ds_lon_name='lon',ds_lat_name='lat'):
+def mask_ds_bbox(ds,minlon,maxlon,minlat,maxlat,ds_lon_name='lon',ds_lat_name='lat',other=-99999):
     """
     Mask a xr.Dataset within bounding box defined by lat and lon mimn and max
     :param ds: dataset with time, lat and lon dimensions
@@ -113,15 +113,17 @@ def mask_ds_bbox(ds,minlon,maxlon,minlat,maxlat,ds_lon_name='lon',ds_lat_name='l
     return ds.where(valid_lat & valid_lon,drop=True)
 
     
-def mask_ds_poly(ds,lats,lons,ds_lat_name='lat',ds_lon_name='lon'):
+def mask_ds_poly(ds,lats,lons,grid_x,grid_y,ds_lat_name='lat',ds_lon_name='lon'):
     """
     Mask a xr.Dataset within Polygon defined by lat and lon coordinate lists.
     :param ds: dataset with time, lat and lom dimensions
     :param lats: list of latitude coordinates to mask within
     :param lons: list of longiude coordinates to mask within (length must equal length of lats)
+    :param grid_x: resolution of grid in x (lon)
+    :param grid_y: resolution of grid in y (lat)
     :param ds_lat_name: ds coordinate label for latitude if not 'lat'
     :param ds_lon_name: ds coordinate label for longitue if not 'lon'
-    :param plot: boolean for whether to produce a plot showing masked area over grid cells
+    :param other: value to replace masked out area values with. can use nan, but then you can't differentiate between actual nan data.
     """
     # Reduce ds to bounding box before cutting out polygon
     ds = mask_ds_bbox(ds,np.min(lons),np.max(lons),np.min(lats),np.max(lats),ds_lon_name,ds_lat_name)
@@ -132,30 +134,27 @@ def mask_ds_poly(ds,lats,lons,ds_lat_name='lat',ds_lon_name='lon'):
     xnp = ds[ds_lon_name].to_numpy()
     ynp = ds[ds_lat_name].to_numpy()
 
-    # Define the size of each grid cell
-    ygrid = np.round(xnp[1]-xnp[0],2)/2#np.mean(np.diff(xnp))/2
-    xgrid = np.round(ynp[1]-ynp[0],2)/2#np.mean(np.diff(ynp))/2
-
     def polycell(x,y):
         """
         Create a new polygon representing the grid cell with centre x,y
         """
-        tl = (x-xgrid,y+ygrid)
-        tr = (x+xgrid,y+ygrid)
-        bl = (x-xgrid,y-ygrid)
-        br = (x+xgrid,y-ygrid)
+        tl = (x-grid_x/2,y+grid_y/2)
+        tr = (x+grid_x/2,y+grid_y/2)
+        bl = (x-grid_x/2,y-grid_y/2)
+        br = (x+grid_x/2,y-grid_y/2)
         return Polygon((tl,tr,br,bl))
     
-    mask = np.ones((len(xnp),len(ynp))) * np.nan
+    mask = np.ones((len(ynp),len(xnp))) * np.nan
     for i,x in (enumerate(xnp)):
         for j,y in enumerate(ynp):
-            mask[i,j]=pn.overlaps(polycell(x,y))
+            pc = polycell(x,y)
+            mask[j,i]=pn.overlaps(pc) or pn.intersects(pc)
     
     # Assign a mask to the ds
     ds['mask'] = ((ds_lat_name,ds_lon_name),mask)
 
     if ds.mask.any():
-        rtn = ds.where(ds.mask,drop=True)
+        rtn = ds.where(ds.mask,other=other,drop=True)
     else:
         print('No latitudes or longnitudes fall within the specified area')
         rtn = None
