@@ -30,6 +30,7 @@ from pygeometa.schemas.ogcapi_records import OGCAPIRecordOutputSchema
 # code architecture
 from abc import ABC, abstractclassmethod
 from typing import List, Union
+from enum import Enum
 
 # shapely for masking polyons
 from shapely import Polygon, vectorized
@@ -41,7 +42,22 @@ import warnings
 warnings.simplefilter('ignore', category=NumbaDeprecationWarning)
 warnings.simplefilter('ignore', category=NumbaPendingDeprecationWarning)
 
+class SSType(Enum):
+    """
+    Spatial selection type
+    """
+    POINT = 'point'
+    BBOX = 'bbox'
+    POLYGON = 'polygon'
 
+# where working in netcdf, and if using a polygon, we need a value to show where in the grid is not included in the polygon (since xarray covers a rectangular/square lat/lon area)
+# this can't be nan as we can't differentiate between no data, so needs a unique value
+OUTSIDE_AREA_SELECTION = -99999
+
+# define grid size so we can crop to polygon area if needed
+GDO_SPI_GRID = 1
+GDO_SMA_GRID = 0.1
+GDO_FPR_GRID = 0.083
 
 class DroughtIndex(ABC):
     """
@@ -58,16 +74,22 @@ class DroughtIndex(ABC):
         self.config = config
         self.args = args
 
-        # determine if we'e dealing with a point or polygon
-        polyla = isinstance(args.latitude,list)
-        polylo = isinstance(args.longitude, list)
-        if polyla and polylo:
-            self.poly=True
-        elif not polyla and not polylo:
-            self.poly=False
-        else:
-            self.logger.error('Must provide latitude and longitude both as a list or as a single number')
+        # turn lat, lon input into a list if necessary
+        if not isinstance(args.latitude,list):
+            self.args.latitude = [args.latitude]
+        if not isinstance(args.longitude,list):
+            self.args.longitude = [args.longitude]
+        if not len(self.args.latitude)==len(self.args.latitude):
+            self.logger.error('Latitude and longitude input must be single numbers or lists of the same length.')
             quit()
+
+        # determine if we'e dealing with a point, polygon or bounding box
+        if len(self.args.latitude)==1:
+            self.sstype = SSType.POINT
+        elif len(self.args.latitude)==2:
+            self.sstype = SSType.BBOX
+        else:
+            self.sstype = SSType.POLYGON
 
         # set up logger
         self.logger = logging.basicConfig(filename='{0}/log_{1}.txt'.format(config.outdir,datetime.datetime.now()),level=logging.DEBUG)
@@ -487,8 +509,9 @@ class GDODroughtIndex(DroughtIndex):
     """
     Specialisation of the Drought class for processing pre-computed indices from the Global Drought Observatory.
     """
-    def __init__(self, config: config.Config, args: config.AnalysisArgs, prod_code: Union[List[str], str]):
+    def __init__(self, config: config.Config, args: config.AnalysisArgs, grid_size, prod_code: Union[List[str], str]):
         super().__init__(config,args)
+        self.grid_size = grid_size
         self.prod_code = [prod_code] if isinstance(prod_code,str) else prod_code
         self.fileloc = config.indir + "/" + self.prod_code[0]
 
@@ -524,22 +547,34 @@ class GDODroughtIndex(DroughtIndex):
             self.logger.error('No files downloaded')
 
         # Methods to open data
-        if self.poly:
-            polygon = Polygon(tuple([(x,y) for x,y in zip(self.args.longitude,self.args.latitude)]))
-            def open(fname):
-                ds = xr.open_dataset(fname).drop_vars(['4326']) 
-                x, y = np.meshgrid(ds.lon, ds.lat)
-                ds['mask'] = (('lat','lon'),vectorized.contains(polygon, x, y))
-                return ds.where(ds.mask,drop=True).drop_vars(['mask'])
-        else:
+        if self.sstype==SSType.POINT:
             def open(fname):
                 return xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['4326']) 
+        elif self.sstype==SSType.BBOX:
+            def open(fname):
+                ds = xr.open_dataset(fname).drop_vars(['4326'])
+                return utils.mask_ds_bbox(ds,
+                                          np.min(self.args.longitude),
+                                          np.max(self.args.longitude),
+                                          np.min(self.args.latitude),
+                                          np.max(self.args.latitude)
+                )
+        elif self.sstype==SSType.POLYGON:
+            def open(fname):
+                ds = xr.open_dataset(fname).drop_vars(['4326']) 
+                return utils.mask_ds_poly(ds,
+                                          self.args.latitude,
+                                          self.args.longitude,
+                                          self.grid_size,
+                                          self.grid_size,
+                                          other = OUTSIDE_AREA_SELECTION
+                                          )
 
         # Open all dses and merge
         ds = xr.merge(open(fname) for fname in self.filepaths)
 
         # Trim to required dates
-        ds = utils.crop_ds(ds,self.args.start_date,self.args.end_date)
+        ds = ds.sel(time=slice(pd.Timestamp(self.args.start_date),pd.Timestamp(self.args.end_date)))
         return ds
   
 class SPI_ECMWF(DroughtIndex):
@@ -656,7 +691,7 @@ class SPI_GDO(GDODroughtIndex):
     Specialisation of the GDODrought class for processing pre-computed photosynthetically active radiation anomaly data from GDO.
     """
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
-        super().__init__(config,args,'spg03')
+        super().__init__(config,args,GDO_SPI_GRID,'spg03')
 
     def process(self):
         df = super().load_and_trim()
@@ -783,7 +818,7 @@ class SMA_GDO(GDODroughtIndex):
     Specialisation of the GDODrought class for processing pre-computed soil moisture anomaly from GDO.
     """
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
-        super().__init__(config,args,['smant','smand'])
+        super().__init__(config,args,GDO_SMA_GRID,['smant','smand'])
 
     def process(self):
         df = super().load_and_trim()
@@ -808,7 +843,7 @@ class FPAR_GDO(GDODroughtIndex):
     Specialisation of the GDODrought class for processing pre-computed photosynthetically active radiation anomaly data from GDO.
     """
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
-        super().__init__(config,args,'fpanv')
+        super().__init__(config,args,GDO_FPR_GRID,'fpanv')
     
     def process(self):
         df = super().load_and_trim()

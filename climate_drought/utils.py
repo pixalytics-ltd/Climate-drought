@@ -97,7 +97,7 @@ def crop_ds(ds,sdate,edate) -> xr.Dataset:
     """
     return ds.where((ds.time >= pd.Timestamp(sdate)) & (ds.time <= pd.Timestamp(edate)),drop=True)
 
-def mask_ds_bbox(ds,minlon,maxlon,minlat,maxlat,ds_lon_name='lon',ds_lat_name='lat',other=-99999):
+def mask_ds_bbox(ds,minlon,maxlon,minlat,maxlat,ds_lon_name='lon',ds_lat_name='lat'):
     """
     Mask a xr.Dataset within bounding box defined by lat and lon mimn and max
     :param ds: dataset with time, lat and lon dimensions
@@ -113,7 +113,7 @@ def mask_ds_bbox(ds,minlon,maxlon,minlat,maxlat,ds_lon_name='lon',ds_lat_name='l
     return ds.where(valid_lat & valid_lon,drop=True)
 
     
-def mask_ds_poly(ds,lats,lons,grid_x,grid_y,ds_lat_name='lat',ds_lon_name='lon'):
+def mask_ds_poly(ds,lats,lons,grid_x,grid_y,other,ds_lat_name='lat',ds_lon_name='lon'):
     """
     Mask a xr.Dataset within Polygon defined by lat and lon coordinate lists.
     :param ds: dataset with time, lat and lom dimensions
