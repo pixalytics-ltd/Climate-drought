@@ -65,7 +65,7 @@ def dti_dekads(sdate,edate):
     date = dti.values - np.array(d, dtype="timedelta64[D]")
     return pd.DatetimeIndex(np.unique(date))
 
-def fill_gaps(index, df: pd.DataFrame) -> pd.DataFrame:
+def fill_gaps_df(index, df: pd.DataFrame) -> pd.DataFrame:
     """
     Utility function to populate missing data in a DataFrame against a defined list of times
     :param index: index we want to populate 
@@ -78,6 +78,24 @@ def fill_gaps(index, df: pd.DataFrame) -> pd.DataFrame:
         return pd.concat([df,df_gaps]).sort_index()
     else:
         return df
+    
+def fill_gaps_da(index, da: xr.DataArray) -> xr.DataArray:
+    """
+    Utility function to populate missing data in a DataArray against a defined list of times
+    :param index: index we want to populate 
+    :param df: pd.DataFrame to be interpolated onto index
+    :return: pd.DataFrame with a regular datetime index where missing data is populated with NaNs
+    """
+    gaps = index[~index.isin(da.time.to_dataframe().index)]
+    if len(gaps) > 0:
+        def da_t(g):
+            new_data = np.nan*np.ones((1,len(da.lat),len(da.lon)))
+            coords = {'time':[g],'lat':da.lat.to_numpy(),'lon':da.lon.to_numpy()}
+            return xr.DataArray(new_data,coords=coords)
+        return xr.concat([da]+[da_t(g) for g in gaps],dim='time')
+    else:
+        return da
+    
     
 def crop_df(df,sdate,edate) -> pd.DataFrame:
     """

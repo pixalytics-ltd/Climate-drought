@@ -97,7 +97,8 @@ class DroughtIndex(ABC):
         self.logger.setLevel(logging.DEBUG) if config.verbose else self.logger.setLevel(logging.INFO)
 
         # set data to empty df as an indicator that this hasn't been processed yet
-        self.data = pd.DataFrame()
+        self.data_df = pd.DataFrame()
+        self.data_da = xr.DataArray()
 
     @property
     def index_shortname(self):
@@ -495,13 +496,13 @@ class DroughtIndex(ABC):
         if not os.path.isfile(self.output_file_path):
             oformat = self.args.oformat.lower()
             if "cov" in oformat:  # Generate CoverageJSON file
-                self.generate_covjson(self.data)
+                self.generate_covjson(self.data_df)
             elif "csv" in oformat:  # Generate CSV
-                self.data.to_csv(self.output_file_path)
+                self.data_df.to_csv(self.output_file_path)
             elif "net" in oformat:  # Generate NetCDF
-                xr.Dataset(self.data.to_xarray()).to_netcdf(self.output_file_path)
+                xr.Dataset(self.data_df.to_xarray()).to_netcdf(self.output_file_path)
             else:  # Generate GeoJSON
-                self.generate_geojson(self.data)
+                self.generate_geojson(self.data_df)
         else:
             self.logger.warning('Outfile not written: already exists')
 
@@ -540,6 +541,7 @@ class GDODroughtIndex(DroughtIndex):
             filelist = filelist + f.download(self.fileloc)
 
         self.filepaths = [self.fileloc + "/" + f for f in filelist]
+        return self.filepaths
             
     def load_and_trim(self):
 
@@ -680,7 +682,7 @@ class SPI_ECMWF(DroughtIndex):
         df_filtered = utils.fill_gaps(time_months,df_filtered)
 
         # store processed data on object
-        self.data = df_filtered
+        self.data_df = df_filtered
 
         self.generate_output()
 
@@ -694,13 +696,21 @@ class SPI_GDO(GDODroughtIndex):
         super().__init__(config,args,GDO_SPI_GRID,'spg03')
 
     def process(self):
-        df = super().load_and_trim()
+        ds = super().load_and_trim()
 
         # Fill any data gaps
         time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
-        df = utils.fill_gaps(time_months,df)
+        da = utils.fill_gaps_da(time_months,ds.spg03)
 
-        self.data = df
+        self.data_da = da
+
+        # Convert to df for output
+        df = da.to_dataframe().reset_index().set_index('time')
+
+        # Drop locations outside of selected area
+        df = df[df.spg03!=OUTSIDE_AREA_SELECTION]
+        self.data_df = df
+
         self.generate_output()
 
         return df
@@ -806,7 +816,7 @@ class SMA_ECMWF(DroughtIndex):
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
-        self.data = swv_dekads
+        self.data_df = swv_dekads
 
         # Output to JSON
         self.generate_output()
@@ -821,19 +831,27 @@ class SMA_GDO(GDODroughtIndex):
         super().__init__(config,args,GDO_SMA_GRID,['smant','smand'])
 
     def process(self):
-        df = super().load_and_trim()
+        ds = super().load_and_trim()
 
-        # smand is the modelled data and is available more recently than the long term time series of smant
-        # replace missing smant values with smand and discard
-        if 'smand' in list(df.columns):
-            df.smant.fillna(df.smand, inplace=True)
-            del df['smand']
+        # smand is used instead of smant for November 2022 (2nd dekad) onwards
+        # split data, rename smand -> smant, and recombine
+        da_smant = utils.crop_ds(ds.smant,self.args.start_date,'20221110')
+        da_smand = utils.crop_ds(ds.drop_vars('smant').rename({'smand':'smant'}).smant,'20221111',self.args.end_date)
+        da = xr.concat([da_smant,da_smand],dim='time')
 
         # Fill any data gaps
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
-        df = utils.fill_gaps(time_dekads,df)
+        da = utils.fill_gaps_da(time_dekads,da)
 
-        self.data = df
+        self.data_da = da
+        
+        # Convert to df for output
+        df = da.to_dataframe().reset_index().set_index('time')
+
+        # Drop locations outside of selected area
+        df = df[df.smant!=OUTSIDE_AREA_SELECTION]
+        self.data_df = df
+
         self.generate_output()
 
         return df
@@ -846,13 +864,24 @@ class FPAR_GDO(GDODroughtIndex):
         super().__init__(config,args,GDO_FPR_GRID,'fpanv')
     
     def process(self):
-        df = super().load_and_trim()
+        ds = super().load_and_trim()
+
+        # Convert to data array for simplicity
+        da = ds.fpanv
 
         # Fill any data gaps
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
-        df = utils.fill_gaps(time_dekads,df)
+        da = utils.fill_gaps_da(time_dekads,da)
 
-        self.data = df
+        self.data_da = da
+        
+        # Convert to df for output
+        df = da.to_dataframe().reset_index().set_index('time')
+
+        # Drop locations outside of selected area
+        df = df[df.fpanv!=OUTSIDE_AREA_SELECTION]
+        self.data_df = df
+
         self.generate_output()
 
         return df
