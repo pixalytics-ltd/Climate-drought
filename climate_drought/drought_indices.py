@@ -108,7 +108,10 @@ class DroughtIndex(ABC):
         Returns the path to the output file from processing
         :return: path to the output file
         """
-        file_str = "{sd}-{ed}_{la}_{lo}".format(sd=self.args.start_date, ed=self.args.end_date, la=self.args.latitude, lo=self.args.longitude)
+        latstr = str(self.args.latitude).replace('[','').replace(']','').replace(', ','-')
+        lonstr = str(self.args.longitude).replace('[','').replace(']','').replace(', ','-')
+
+        file_str = "{sd}-{ed}_{la}_{lo}".format(sd=self.args.start_date, ed=self.args.end_date, la=latstr, lo=lonstr)
         oformat = self.args.oformat.lower()
         if "cov" in oformat: # Generate CoverageJSON file
             file_ext = 'covjson'
@@ -145,9 +148,9 @@ class DroughtIndex(ABC):
         # Build GeoJSON object
         self.feature_collection = {"type": "FeatureCollection", "features": []}
 
-        df_filtered = df_filtered.reset_index().set_index(['time','latitude','longitde'])
+        df_filtered = df_filtered.reset_index().set_index(['time','latitude','longitude'])
         for i in df_filtered.index:
-            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [df_filtered.loc[i].longitude, df_filtered.loc[i].latitude]}, "properties": {}}
+            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [i[2], i[1]]}, "properties": {}}
 
             # Extract columns as properties
             property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
@@ -512,7 +515,7 @@ class DroughtIndex(ABC):
             elif "csv" in oformat:  # Generate CSV
                 self.data_df.to_csv(self.output_file_path)
             elif "net" in oformat:  # Generate NetCDF
-                xr.Dataset(self.data_df.to_xarray()).to_netcdf(self.output_file_path)
+                xr.Dataset(self.data_da).to_netcdf(self.output_file_path)
             else:  # Generate GeoJSON
                 self.generate_geojson(self.data_df)
         else:
