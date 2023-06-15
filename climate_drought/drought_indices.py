@@ -185,7 +185,6 @@ class DroughtIndex(ABC):
         with open(self.output_file_path, "w", encoding='utf-8') as outfile:
             geojson.dump(json_x, outfile, indent=4)
 
-    # TODO needs updating for all possible options
     def generate_covjson(self) -> None:
         """
          Generates CoverageJSON file for data
@@ -227,7 +226,7 @@ class DroughtIndex(ABC):
         # Create Structure
         self.feature_collection = Coverage(
             domain=Domain(
-                domainType="PointSeries",
+                domainType="Grid",
                 axes={
                     "x": {"dataType": "float", "values": longitudes.tolist()},
                     "y": {"dataType": "float", "values": latitudes.tolist()},
@@ -339,6 +338,7 @@ class DroughtIndex(ABC):
     def generate_output(self) -> None:
         # Save JSON file
         ## TODO SL to finish implementation of CoverageJSON so can be chosen option
+        print('Generating output...')
         if not os.path.isfile(self.output_file_path):
             oformat = self.args.oformat.lower()
             if "cov" in oformat:  # Generate CoverageJSON file
@@ -708,6 +708,7 @@ class SMA_GDO(GDODroughtIndex):
         super().__init__(config,args,['smant']) #['smant','smand']
 
     def process(self):
+        print('Loading and trimmning data...')
         ds = super().load_and_trim()
 
         # TODO reimplement if it is important to have data beyond 2022
@@ -722,6 +723,7 @@ class SMA_GDO(GDODroughtIndex):
         #     da = ds.smant
 
         # Fill any data gaps
+        print('Filling gaps  in data...')  
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
         ds = ds.reindex({'time': time_dekads})
 
@@ -731,9 +733,11 @@ class SMA_GDO(GDODroughtIndex):
         self.data_ds = ds
         
         # Convert to df for output
+        print('Converting to dataframe...')
         df = ds.to_dataframe().reset_index()
 
         # Drop locations outside of selected area
+        print('Reducing to requested area...')
         df = df[df.smant!=OUTSIDE_AREA_SELECTION]
         self.data_df = df
 
