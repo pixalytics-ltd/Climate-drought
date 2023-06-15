@@ -29,7 +29,7 @@ from pygeometa.schemas.ogcapi_records import OGCAPIRecordOutputSchema
 
 # code architecture
 from abc import ABC, abstractclassmethod
-from typing import List, Union
+from typing import List, Union, Dict
 from enum import Enum
 
 
@@ -52,16 +52,30 @@ class SSType(Enum):
 # this can't be nan as we can't differentiate between no data, so needs a unique value
 OUTSIDE_AREA_SELECTION = -99999
 
-# define grid size so we can crop to polygon area if needed
-GDO_SPI_GRID = 1
-GDO_SMA_GRID = 0.1
-GDO_FPR_GRID = 0.083
+class VarInfo():
+    """
+    Describes a variable which is output as part of the larger Drought Index object
+    E.g. SPI_ECMWF outputs tp (total precipitation) and spi
+    """
+    def __init__(self,longname,units,label,link="https://xxx",gridsize=None):
+        self.longname = longname
+        self.units = units
+        self.label = label
+        self.link = link
+        self.gridsize = gridsize
+
+GDO_VARS = {
+    'spg03': VarInfo('Standard Precipitation Index','unitless','Standard Precipitation Index',"https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi",gridsize=1),
+    'smand': VarInfo('Soil Moisture Anomaly','unitless','Soil Moisture Anomaly',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables",gridsize=0.1),
+    'smant': VarInfo('Soil Moisture Anomaly','unitless','Soil Moisture Anomaly',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables",gridsize=0.1),
+    'fpanv': VarInfo('fraction Absorbed Photosynthetically Active Radiation (fAPAR) Anomaly','unitless','fAPAR_anomaly',gridsize=0.083)
+}
 
 class DroughtIndex(ABC):
     """
     Base class providing functionality for all drought indices
     """
-    def __init__(self, config: config.Config, args: config.AnalysisArgs):
+    def __init__(self, config: config.Config, args: config.AnalysisArgs, vars: Dict[str,VarInfo]):
         """
         Initializer.
         :param config: config object
@@ -71,6 +85,7 @@ class DroughtIndex(ABC):
         # transfer inputs
         self.config = config
         self.args = args
+        self.vars = vars
 
         # turn lat, lon input into a list if necessary
         if not isinstance(args.latitude,list):
@@ -94,9 +109,10 @@ class DroughtIndex(ABC):
         self.logger = logging.getLogger("ERA5_Processing")
         self.logger.setLevel(logging.DEBUG) if config.verbose else self.logger.setLevel(logging.INFO)
 
-        # set data to empty df as an indicator that this hasn't been processed yet
+        # Assign an empty dataframe and dataset to hold data
+        # Need both to support different output formats
         self.data_df = pd.DataFrame()
-        self.data_da = xr.DataArray()
+        self.data_ds = xr.Dataset()
 
     @property
     def index_shortname(self):
@@ -140,7 +156,7 @@ class DroughtIndex(ABC):
         """
         pass
 
-    def generate_geojson(self, df_filtered) -> None:
+    def generate_geojson(self) -> None:
         """
          Generates GeoJSON file for data
          :return: path to the geojson file
@@ -148,12 +164,12 @@ class DroughtIndex(ABC):
         # Build GeoJSON object
         self.feature_collection = {"type": "FeatureCollection", "features": []}
 
-        df_filtered = df_filtered.reset_index().set_index(['time','latitude','longitude'])
-        for i in df_filtered.index:
+        df = self.data_df.set_index(['time','latitude','longitude'])
+        for i in df.index:
             feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [i[2], i[1]]}, "properties": {}}
 
             # Extract columns as properties
-            property = df_filtered.loc[i].to_json(date_format='iso', force_ascii = True)
+            property = df.loc[i].to_json(date_format='iso', force_ascii = True)
             parsed = json.loads(property)
             #print("Sam: ",parsed)
             feature['properties'] = parsed
@@ -170,237 +186,52 @@ class DroughtIndex(ABC):
             geojson.dump(json_x, outfile, indent=4)
 
     # TODO needs updating for all possible options
-    def generate_covjson(self, df_filtered) -> None:
+    def generate_covjson(self) -> None:
         """
          Generates CoverageJSON file for data
          :return: path to the json file
          """
 
         # Extract dates and values
-        dates = df_filtered.index.values
-        latitudes = df_filtered.latitude.values
-        longitudes = df_filtered.longitude.values
+        dates = self.data_ds.time.values
+        latitudes = self.data_ds.latitude.values
+        longitudes = self.data_ds.longitude.values
 
-        # Print dataframe
-        self.logger.debug("Data frame: ")
-        self.logger.debug(df_filtered)
+        parameters = dict()
+        ranges = dict()
 
-        if "SPI" in self.args.indicator or "CDI" in self.args.indicator:
-            if "CDI" in self.args.indicator:
-                spi_name = "SPI"
-                spi_vals = df_filtered.spg03.values
-                pvals = []
-                for val in spi_vals:
-                    pvals.append(float(val))
-            else: #SPI
-                spi_name = self.args.indicator
-                spi_vals = df_filtered.spi.values
-                svals = []
-                for val in spi_vals:
-                    svals.append(float(val))
-                num_vals = len(spi_vals)
-
-                precip_name = "Precipitation"
-
-                precip_vals = df_filtered.tp.values
-                pvals = []
-                for val in precip_vals:
-                    pvals.append(float(val))
-
-                parameters = {
-                    precip_name: Parameter(
-                        type="Parameter",
-                        description={
-                            "en": "Total Precipitation"
-                        },
-                        unit={
-                            "symbol": "m"
-                        },
-                        observedProperty={
-                            "id": "https://vocab.nerc.ac.uk/standard_name/precipitation_amount/",
-                            "label": {
-                                "en": "Precipition_amount"
-                            }
-                        }
-                    ),
-                    spi_name: Parameter(
-                        type="Parameter",
-                        description={
-                            "en": "Standard Precipitation Index"
-                        },
-                        unit={
-                            "symbol": "unitless"
-                        },
-                        observedProperty={
-                            "id": "https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi",
-                            "label": {
-                                "en": "Standard Precipitation Index"
-                            }
-                        }
-                    ),
-                }
-
-                ranges = {
-                    precip_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
-                    spi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals)
-                }
-
-        if "SMA" in self.args.indicator or "CDI" in self.args.indicator:
-            if "CDI" in self.args.indicator:
-                sma_name = "SMA"
-                sma_vals = df_filtered.smant.values
-                svals = []
-                for val in sma_vals:
-                    svals.append(float(val))
-            else:
-                sm_name = "Soil Moisture"
-                self.logger.warning("Just outputting the surface, level 1, soil moisture and associated anomaly")
-
-                sm_vals = df_filtered.swvl1.values
-                pvals = []
-                for val in sm_vals:
-                    pvals.append(float(val))
-                sma_name = self.args.indicator
-                sma_vals = df_filtered.zscore_swvl1.values
-                svals = []
-                for val in sma_vals:
-                    svals.append(float(val))
-                num_vals = len(sma_vals)
-
-                parameters = {
-                    sm_name: Parameter(
-                        type="Parameter",
-                        description={
-                            "en": "Surface Soil Moisture"
-                        },
-                        unit={
-                            "symbol": "m3/m3"
-                        },
-                        observedProperty={
-                            "id": "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables",
-                            "label": {
-                                "en": "Soil_moisture_amount"
-                            }
-                        }
-                    ),
-                    sma_name: Parameter(
-                        type="Parameter",
-                        description={
-                            "en": "Surface Soil Moisture Anomaly"
-                        },
-                        unit={
-                            "symbol": "unitless"
-                        },
-                        observedProperty={
-                            "id": "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables",
-                            "label": {
-                                "en": "Surface Soil Moisture Anomaly"
-                            }
-                        }
-                    ),
-                }
-
-                ranges = {
-                    sm_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
-                    sma_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals)
-                }
-
-        if self.args.indicator == "CDI":
-            cdi_name = self.args.indicator
-            cdi_vals = df_filtered.CDI.values
-            cvals = []
-            for val in cdi_vals:
-                cvals.append(float(val))
-            num_vals = len(cdi_vals)
-
-            fpv_name = "fAPAR anomaly"
-            fpv_vals = df_filtered.fpanv.values
-            fvals = []
-            for val in fpv_vals:
-                fvals.append(float(val))
-
-            parameters = {
-                spi_name: Parameter(
-                    type="Parameter",
-                    description={
-                        "en": "Standard Precipitation Index"
-                    },
-                    unit={
-                        "symbol": "unitless"
-                    },
-                    observedProperty={
-                        "id": "https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi",
-                        "label": {
-                            "en": "Standard Precipitation Index"
-                        }
+        for key, val in self.vars.items():
+            # Add each variable to parameter dictionary
+            parameters[key] = Parameter(
+                type="Parameter",
+                description={
+                    "en": val.longname
+                },
+                unit={
+                    "symbol":val.units
+                },
+                observedProperty={
+                    "id": val.link,
+                    "label": {
+                        "en": val.label
                     }
-                ),
-                sma_name: Parameter(
-                    type="Parameter",
-                    description={
-                        "en": "Surface Soil Moisture Anomaly"
-                    },
-                    unit={
-                        "symbol": "unitless"
-                    },
-                    observedProperty={
-                        "id": "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables",
-                        "label": {
-                            "en": "Surface Soil Moisture Anomaly"
-                        }
-                    }
-                ),
-                fpv_name: Parameter(
-                    type="Parameter",
-                    description={
-                        "en": "fraction Absorbed Photosynthetically Active Radiation (fAPAR) Anomaly"
-                    },
-                    unit={
-                        "symbol": "unitless"
-                    },
-                    observedProperty={
-                        "id": "https://xxx",
-                        "label": {
-                            "en": "fAPAR_anomaly"
-                        }
-                    }
-                ),
-                cdi_name: Parameter(
-                    type="Parameter",
-                    description={
-                        "en": "Combined Drought Indicator"
-                    },
-                    unit={
-                        "symbol": "unitless"
-                    },
-                    observedProperty={
-                        "id": "https://xxx",
-                        "label": {
-                            "en": "combined_drought_indicator"
-                        }
-                    }
+                }
+            )
+            # Add each variable data to ranges
+            ranges[key] = NdArray(
+                axisNames=["x","y","t"],
+                shape=[len(longitudes),len(latitudes),len(dates)],
+                values=self.data_ds[key].to_numpy().flatten().tolist()
                 )
-            }
-
-            self.logger.debug("Parameters: ")
-            self.logger.debug(parameters)
-            self.logger.debug("Output datasets: SPI {} SMA {} FPV {} CDI {}".format(len(pvals),len(svals),len(fvals),len(cvals)))
-
-            ranges = {
-                spi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=pvals),
-                sma_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=svals),
-                fpv_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=fvals),
-                cdi_name: NdArray(axisNames=["x", "y", "t"], shape=[1, 1, num_vals], values=cvals)
-            }
 
         # Create Structure
         self.feature_collection = Coverage(
             domain=Domain(
                 domainType="PointSeries",
                 axes={
-                    "x": {"dataType": "float", "values": list(longitudes)},
-                    "y": {"dataType": "float", "values": list(latitudes)},
-                    "t": {"dataType": "datetime", "values": list(dates)}
+                    "x": {"dataType": "float", "values": longitudes.tolist()},
+                    "y": {"dataType": "float", "values": latitudes.tolist()},
+                    "t": {"dataType": "datetime", "values": [str(t) for t in dates]}
                 },
             ),
             referencing=ReferenceSystem(coordinates=["x", "y"], type="GeographicCRS"),
@@ -511,13 +342,13 @@ class DroughtIndex(ABC):
         if not os.path.isfile(self.output_file_path):
             oformat = self.args.oformat.lower()
             if "cov" in oformat:  # Generate CoverageJSON file
-                self.generate_covjson(self.data_df)
+                self.generate_covjson()
             elif "csv" in oformat:  # Generate CSV
-                self.data_df.to_csv(self.output_file_path)
+                self.data_df.to_csv(self.output_file_path,index=False)
             elif "net" in oformat:  # Generate NetCDF
-                xr.Dataset(self.data_da).to_netcdf(self.output_file_path)
+                xr.Dataset(self.data_ds).to_netcdf(self.output_file_path)
             else:  # Generate GeoJSON
-                self.generate_geojson(self.data_df)
+                self.generate_geojson()
         else:
             self.logger.warning('Outfile not written: already exists')
 
@@ -525,10 +356,16 @@ class GDODroughtIndex(DroughtIndex):
     """
     Specialisation of the Drought class for processing pre-computed indices from the Global Drought Observatory.
     """
-    def __init__(self, config: config.Config, args: config.AnalysisArgs, grid_size, prod_code: Union[List[str], str]):
-        super().__init__(config,args)
-        self.grid_size = grid_size
+    def __init__(self, config: config.Config, args: config.AnalysisArgs, prod_code: Union[List[str], str]):
+
+        # Turn product code into list if not already
         self.prod_code = [prod_code] if isinstance(prod_code,str) else prod_code
+
+        # Get variable details for reuested products
+        vars = dict(filter(lambda k: k[0] in self.prod_code, GDO_VARS.items()))
+
+        super().__init__(config,args,vars)
+        self.grid_size = next(iter(self.vars.values())).gridsize
         self.fileloc = config.indir + "/" + self.prod_code[0]
 
         # Create GDO download objects so we can see what the filenames are
@@ -607,8 +444,13 @@ class SPI_ECMWF(DroughtIndex):
         :param args: program arguments
         :param working_dir: directory that will hold all files generated by the class
         """
+        # Define vars
+        vars = {
+            'tp': VarInfo('Total Precipitation','m','Precipitation_amount',"https://vocab.nerc.ac.uk/standard_name/precipitation_amount/"),
+            'spi': VarInfo('Standard Precipitation Index','unitless','Standard Precipitation Index',"https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi")
+        }
         # precipitation download must return a baseline time series because this is a requirement of the outsourced spi calculation algorithm
-        super().__init__(config, args)
+        super().__init__(config, args, vars)
         
         # create era5 request object
         request = erq.ERA5Request(
@@ -713,22 +555,22 @@ class SPI_GDO(GDODroughtIndex):
     Specialisation of the GDODrought class for processing pre-computed photosynthetically active radiation anomaly data from GDO.
     """
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
-        super().__init__(config,args,GDO_SPI_GRID,'spg03')
+        super().__init__(config,args,'spg03')
 
     def process(self):
         ds = super().load_and_trim()
 
         # Fill any data gaps
         time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
-        da = utils.fill_gaps_da(time_months,ds.spg03)
+        ds = ds.reindex({'time': time_months})
 
         # Rename lat and lon coords for consitency with other drought indices
-        da = da.rename({'lat':'latitude','lon':'longitude'})
+        ds = ds.rename({'lat':'latitude','lon':'longitude'})
 
-        self.data_da = da
+        self.data_ds = ds
 
         # Convert to df for output
-        df = da.to_dataframe().reset_index().set_index('time')
+        df = ds.to_dataframe().reset_index()
 
         # Drop locations outside of selected area
         df = df[df.spg03!=OUTSIDE_AREA_SELECTION]
@@ -749,7 +591,19 @@ class SMA_ECMWF(DroughtIndex):
         :param args: argument object
         :param working_dir: directory that will hold all files generated by the class
         """
-        super().__init__(config,args)
+        # Define vars
+        vars = {
+            'swvl1': VarInfo('Soil Water Volume Layer 1','m3/m3','Soil_moisture_amount',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+            'swvl2': VarInfo('Soil Water Volume Layer 2','m3/m3','Soil_moisture_amount',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+            'swvl3': VarInfo('Soil Water Volume Layer 3','m3/m3','Soil_moisture_amount',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+            'swvl4': VarInfo('Soil Water Volume Layer 4','m3/m3','Soil_moisture_amount',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+            'zscore_swvl1': VarInfo('Soil Moisture Anomaly Layer 1','unitless','Soil Moisture Anomaly',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+            'zscore_swvl2': VarInfo('Soil Moisture Anomaly Layer 2','unitless','Soil Moisture Anomaly',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+            'zscore_swvl3': VarInfo('Soil Moisture Anomaly Layer 3','unitless','Soil Moisture Anomaly',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+            'zscore_swvl4': VarInfo('Soil Moisture Anomaly Layer 4','unitless','Soil Moisture Anomaly',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+            }
+
+        super().__init__(config,args,vars)
         self.logger.debug("Initiated ERA5 daily processing of soil water.")
         
         #initialise download objects
@@ -851,31 +705,33 @@ class SMA_GDO(GDODroughtIndex):
     Specialisation of the GDODrought class for processing pre-computed soil moisture anomaly from GDO.
     """
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
-        super().__init__(config,args,GDO_SMA_GRID,['smant','smand'])
+        super().__init__(config,args,['smant']) #['smant','smand']
 
     def process(self):
         ds = super().load_and_trim()
 
-        # smand is used instead of smant for November 2022 (2nd dekad) onwards
-        # split data, rename smand -> smant, and recombine
-        if 'smand' in list(ds.variables):
-            da_smant = utils.crop_ds(ds.smant,self.args.start_date,'20221110')
-            da_smand = utils.crop_ds(ds.drop_vars('smant').rename({'smand':'smant'}).smant,'20221111',self.args.end_date)
-            da = xr.concat([da_smant,da_smand],dim='time')
-        else:
-            da = ds.smant
+        # TODO reimplement if it is important to have data beyond 2022
+        # # smand is used instead of smant for November 2022 (2nd dekad) onwards
+        # # split data, rename smand -> smant, and recombine
+        # if 'smand' in list(ds.variables):
+        #     da_smant = utils.crop_ds(ds.smant,self.args.start_date,'20221110')
+        #     da_smand = utils.crop_ds(ds.drop_vars('smant').rename({'smand':'smant'}).smant,'20221111',self.args.end_date)
+        #     da = xr.concat([da_smant,da_smand],dim='time')
+        #     self.vars.pop('smand')
+        # else:
+        #     da = ds.smant
 
         # Fill any data gaps
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
-        da = utils.fill_gaps_da(time_dekads,da)
+        ds = ds.reindex({'time': time_dekads})
 
         # Rename lat and lon coords for consitency with other drought indices
-        da = da.rename({'lat':'latitude','lon':'longitude'})
+        ds = ds.rename({'lat':'latitude','lon':'longitude'})
 
-        self.data_da = da
+        self.data_ds = ds
         
         # Convert to df for output
-        df = da.to_dataframe().reset_index().set_index('time')
+        df = ds.to_dataframe().reset_index()
 
         # Drop locations outside of selected area
         df = df[df.smant!=OUTSIDE_AREA_SELECTION]
@@ -890,25 +746,22 @@ class FPAR_GDO(GDODroughtIndex):
     Specialisation of the GDODrought class for processing pre-computed photosynthetically active radiation anomaly data from GDO.
     """
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
-        super().__init__(config,args,GDO_FPR_GRID,'fpanv')
+        super().__init__(config,args,'fpanv')
     
     def process(self):
         ds = super().load_and_trim()
 
-        # Convert to data array for simplicity
-        da = ds.fpanv
-
         # Fill any data gaps
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
-        da = utils.fill_gaps_da(time_dekads,da)
-
-        self.data_da = da
-
-        # Rename lat and lon coords for consitency with other drought indices
-        da = da.rename({'lat':'latitude','lon':'longitude'})
+        ds = ds.reindex({'time': time_dekads})
         
+        # Rename lat and lon coords for consitency with other drought indices
+        ds = ds.rename({'lat':'latitude','lon':'longitude'})
+
+        self.data_ds = ds
+
         # Convert to df for output
-        df = da.to_dataframe().reset_index().set_index('time')
+        df = ds.to_dataframe().reset_index()
 
         # Drop locations outside of selected area
         df = df[df.fpanv!=OUTSIDE_AREA_SELECTION]
