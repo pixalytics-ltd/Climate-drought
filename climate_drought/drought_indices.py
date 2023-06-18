@@ -79,6 +79,7 @@ ALL_VARS = {
     'zscore_swvl2': VarInfo('Soil Moisture Anomaly Layer 2','unitless','Soil Moisture Anomaly',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
     'zscore_swvl3': VarInfo('Soil Moisture Anomaly Layer 3','unitless','Soil Moisture Anomaly',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
     'zscore_swvl4': VarInfo('Soil Moisture Anomaly Layer 4','unitless','Soil Moisture Anomaly',"https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+    'CDI': VarInfo('Combined Drought Index','unitless','Combined Drought Index')
     }
 
 class DroughtIndex(ABC):
@@ -851,11 +852,10 @@ class CDI(DroughtIndex):
         da_fpr = self.fpr.data_ds[self.args.fpr_var]
 
         # Reindex to shared timeframe and shift required number of dekads for CDI
+        interp_method = 'nearest' if self.sstype==SSType.POINT else 'linear'
         spi_filled = da_spi.reindex({'time':self.time_dekads}).shift({'time':3})
-        sma_filled = da_sma.reindex({'time':self.time_dekads}).shift({'time':2})
-        fpr_filled = da_fpr.reindex({'time':self.time_dekads}).shift({'time':1})
-
-        ds = xr.merge([spi_filled,sma_filled,fpr_filled])
+        sma_filled = da_sma.reindex({'time':self.time_dekads}).interp({'latitude': da_spi.latitude,'longitude': da_spi.longitude},method=interp_method).shift({'time':2})
+        fpr_filled = da_fpr.reindex({'time':self.time_dekads}).interp({'latitude': da_spi.latitude,'longitude': da_spi.longitude},method=interp_method).shift({'time':1})
 
         # Now create CDI with following levels:
         # 0: no warning
@@ -864,35 +864,27 @@ class CDI(DroughtIndex):
         # 3: alert 1 = fpr < -1 and spi < -1
         # 4: alert 2 = all < -1
 
-        def calc_cdi(r):
-            spi_ = r[self.args.spi_var] < -1
-            sma_ = r[self.args.sma_var] < -1
-            fpr_ = r[self.args.fpr_var] < -1
-            if r.isna().any():
-                return np.nan
-            elif spi_ and sma_ and fpr_:
-                return 4
-            elif spi_ and fpr_:
-                return 3
-            elif spi_ and sma_:
-                return 2
-            elif spi_:
-                return 1
-            else:
-                return 0
-            
-        cdi = xr.apply_ufunc(calc_cdi,)
+        def calc_cdi(spi,sma,fpr):
+            spi_ = spi < -1
+            sma_ = sma < -1
+            fpr_ = fpr < -1
+            cdi = np.ones_like(spi) * np.nan
+            cdi[~spi_] = 0
+            cdi[spi_] = 1
+            cdi[spi_ & sma_] = 2
+            cdi[spi_ & fpr_] = 3
+            cdi[spi_ & sma_ & fpr_] = 4
+            cdi[np.isnan(spi) | np.isnan(sma) | np.isnan(fpr)] = np.nan
+            return cdi
 
-        # df = self.df_shifted
-        # df['CDI'] = cdi
-        
-        # self.data = df
+        cdi = xr.apply_ufunc(calc_cdi,spi_filled,sma_filled,fpr_filled)
 
-        # # Output to JSON
-        # if not os.path.isfile(self.output_file_path):
-        #     self.generate_output()
+        ds = xr.Dataset(data_vars={self.args.spi_var: spi_filled, self.args.sma_var: sma_filled, self.args.fpr_var: fpr_filled, 'CDI': cdi})
+        self.data_ds = ds
+        self.data_df = ds.to_dataframe().reset_index()
 
-        # self.logger.info("Completed processing of ERA5 CDI data.")
-        # return df
-        return ds
+        self.generate_output()
+
+        self.logger.info("Completed processing of ERA5 CDI data.")
+        return self.data_df
     
