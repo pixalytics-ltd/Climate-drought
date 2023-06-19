@@ -164,6 +164,11 @@ def mask_ds_poly(ds,lats,lons,grid_x,grid_y,other,ds_lat_name='lat',ds_lon_name=
 def nearest_dekad(day: int) -> int:
     return 1 if day<11 else (11 if day<21 else 21)
 
+def regrid_like(da,da_like,xy_label=['longitude','latitude']):
+    xc = int(np.floor(len(da[xy_label[0]])/len(da_like[xy_label[0]])))
+    yc = int(np.floor(len(da[xy_label[1]])/len(da_like[xy_label[1]])))
+    return da.coarsen({xy_label[0]:xc,xy_label[1]:yc},boundary='trim').mean()
+
 class setup_args:
     working_dir = '/data/webservice/CLIMATE'
     indir = '/data/webservice/CLIMATE/input'

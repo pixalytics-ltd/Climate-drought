@@ -851,11 +851,34 @@ class CDI(DroughtIndex):
         da_sma = self.sma.data_ds[self.args.sma_var]
         da_fpr = self.fpr.data_ds[self.args.fpr_var]
 
-        # Reindex to shared timeframe and shift required number of dekads for CDI
-        interp_method = 'nearest' if self.sstype==SSType.POINT else 'linear'
-        spi_filled = da_spi.reindex({'time':self.time_dekads}).shift({'time':3})
-        sma_filled = da_sma.reindex({'time':self.time_dekads}).interp({'latitude': da_spi.latitude,'longitude': da_spi.longitude},method=interp_method).shift({'time':2})
-        fpr_filled = da_fpr.reindex({'time':self.time_dekads}).interp({'latitude': da_spi.latitude,'longitude': da_spi.longitude},method=interp_method).shift({'time':1})
+        # drop values outside requested area if polygon
+        if self.sstype.value is SSType.POLYGON.value:
+            da_spi = da_spi.where(da_spi != OUTSIDE_AREA_SELECTION)
+            da_sma = da_sma.where(da_sma != OUTSIDE_AREA_SELECTION)
+            da_fpr = da_fpr.where(da_fpr != OUTSIDE_AREA_SELECTION)
+
+        # Interpolate SMA and FPR to same grid as CDI
+        if not (self.sstype.value is SSType.POINT.value):
+            da_sma = utils.regrid_like(da_sma,da_spi)
+            da_fpr = utils.regrid_like(da_fpr,da_spi)
+
+        da_sma = da_sma.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
+        da_fpr = da_fpr.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
+
+        # Reindex to shared timeframe
+        spi_reindexed = da_spi.reindex({'time':self.time_dekads},method='ffill')
+        sma_reindexed = da_sma.reindex({'time':self.time_dekads})
+        fpr_reindexed = da_fpr.reindex({'time':self.time_dekads})
+
+        self.ds_reindexed = xr.Dataset(data_vars = {self.args.spi_var: spi_reindexed,
+                                                    self.args.sma_var: sma_reindexed,
+                                                    self.args.fpr_var: fpr_reindexed})
+        
+        # Shift data to calculated CDI from delayed data
+        spi_shifted = spi_reindexed.shift({'time':3})
+        sma_shifted = sma_reindexed.shift({'time':2})
+        fpr_shifted = fpr_reindexed.shift({'time':1})
+
 
         # Now create CDI with following levels:
         # 0: no warning
@@ -877,11 +900,11 @@ class CDI(DroughtIndex):
             cdi[np.isnan(spi) | np.isnan(sma) | np.isnan(fpr)] = np.nan
             return cdi
 
-        cdi = xr.apply_ufunc(calc_cdi,spi_filled,sma_filled,fpr_filled)
+        cdi = xr.apply_ufunc(calc_cdi,spi_shifted,sma_shifted,fpr_shifted)
 
-        ds = xr.Dataset(data_vars={self.args.spi_var: spi_filled, self.args.sma_var: sma_filled, self.args.fpr_var: fpr_filled, 'CDI': cdi})
-        self.data_ds = ds
-        self.data_df = ds.to_dataframe().reset_index()
+        self.ds_shifted = xr.Dataset(data_vars={self.args.spi_var: spi_shifted, self.args.sma_var: sma_shifted, self.args.fpr_var: fpr_shifted, 'CDI': cdi})
+        self.data_ds = self.ds_reindexed.assign(CDI=cdi)
+        self.data_df = self.data_ds.to_dataframe().reset_index()
 
         self.generate_output()
 
