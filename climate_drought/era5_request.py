@@ -84,10 +84,13 @@ class ERA5Download():
         Returns the path to the file that will be downloaded
         :return: path to the file that will be downloaded
         """
+        latstr = str(self.req.latitude).replace('[','').replace(']','').replace(', ','-')
+        lonstr = str(self.req.longitude).replace('[','').replace(']','').replace(', ','-')
+
         file_str = "{sd}-{ed}_{la}_{lo}_{fq}".format(sd=self.req.start_date,
                                                      ed=self.req.end_date,
-                                                     la=self.req.latitude,
-                                                     lo=self.req.longitude,
+                                                     la=latstr,
+                                                     lo=lonstr,
                                                      fq=self.req.frequency.value)
     
         # Extra identifier for AWS downloaded ERA5 data
@@ -107,12 +110,19 @@ class ERA5Download():
         self.logger.info("Initiating download of ERA5 data.")
         self.logger.info("Variables to be downloaded: {}.".format(", ".join(self.req.variables)))
 
-        # Setup area of interest extraction
-        boxsz = 0.1
-        area_box = [round(float(self.req.latitude) + boxsz, 2),
-                    round(float(self.req.longitude) - boxsz, 2),
-                    round(float(self.req.latitude) - boxsz, 2),
-                    round(float(self.req.longitude) + boxsz, 2)]
+        if (len(self.req.latitude)) > 1:
+            area_box = [round(np.max(self.req.latitude),2),
+                        round(np.min(self.req.longitude),2),
+                        round(np.min(self.req.latitude),2),
+                        round(np.max(self.req.longitude),2)
+            ]
+        else:
+            # Setup area of interest extraction
+            boxsz = 0.1
+            area_box = [round(float(self.req.latitude) + boxsz, 2),
+                        round(float(self.req.longitude) - boxsz, 2),
+                        round(float(self.req.latitude) - boxsz, 2),
+                        round(float(self.req.longitude) + boxsz, 2)]
 
         if self.req.frequency==Freq.HOURLY:
             times = []
