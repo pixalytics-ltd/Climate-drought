@@ -688,6 +688,22 @@ class SMA_ECMWF(DroughtIndex):
         monthly_swv = xr.open_dataset(path_monthly)
         sample_swv = xr.open_dataset(path_sample).squeeze()
 
+        # Mask polygon if needed
+        if self.sstype.value==SSType.POLYGON.value:
+            mask_ds = lambda ds: utils.mask_ds_poly(
+                ds=ds,
+                lats=self.args.latitude,
+                lons=self.args.longitude,
+                grid_x=0.1,
+                grid_y=0.1,
+                ds_lat_name='lat' if self.config.era_daily else 'latitude',
+                ds_lon_name='lon' if self.config.era_daily else 'longitude',
+                other=OUTSIDE_AREA_SELECTION,
+                mask_bbox=False
+            )
+            monthly_swv=mask_ds(monthly_swv)
+            sample_swv=mask_ds(sample_swv)
+
         # Reduce monthly data to what's relevant
         if 'expver' in monthly_swv.keys():
             monthly_swv = monthly_swv.isel(expver=0).drop_vars('expver')
@@ -696,9 +712,11 @@ class SMA_ECMWF(DroughtIndex):
         swv_mean = monthly_swv.mean('time')
         swv_std = monthly_swv.std('time')
 
-        # Resmple sample data to dekafs
-        sample_swv = sample_swv.drop_vars(['lat','lon'] if self.config.era_daily else ['latitude','longitude']).to_dataframe()
-        swv_dekads = utils.df_to_dekads(sample_swv)
+        if self.sstype.value==SSType.POINT:
+            sample_swv = sample_swv.drop_vars(['lat','lon'] if self.config.era_daily else ['latitude','longitude'])
+
+        # Resmple sample data to dekads
+        swv_dekads = utils.ds_to_dekads(sample_swv)
         
         # Calculate zscores
         for layer in [1,2,3,4]:
@@ -707,11 +725,12 @@ class SMA_ECMWF(DroughtIndex):
 
         # fill any data gaps
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
-        swv_dekads = utils.fill_gaps(time_dekads,swv_dekads)
+        swv_dekads = swv_dekads.reindex({'time':time_dekads})
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
-        self.data_df = swv_dekads
+        self.data_ds = swv_dekads
+        self.data_df = swv_dekads.to_dataframe().reset_index()
 
         # Output to JSON
         self.generate_output()

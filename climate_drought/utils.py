@@ -53,6 +53,19 @@ def df_to_dekads(df: pd.DataFrame) -> pd.DataFrame:
     date = df_daily.index.to_numpy() - np.array(d, dtype="timedelta64[D]")
     return df_daily.groupby(date).mean()
 
+def ds_to_dekads(ds: xr.Dataset) -> xr.Dataset:
+    """
+    Utility function to resample a DataSet with frequency greater than 10 days into dekads
+    :param ds: xr.Dataset with time index with a frequency > 10 days e.g. daily, hourly
+    :return: dataframe with dekad frequency
+    """
+    ds_daily = ds.sortby('time').resample({'time':'1D'}).mean()
+    day = ds_daily.time.dt.day
+    dday = day - np.clip((day-1) // 10, 0, 2)*10 - 1
+    date = ds_daily.time - np.array(dday, dtype="timedelta64[D]")
+    ds_dekads = ds_daily.assign_coords(date=date)
+    return ds_dekads.groupby(date).mean()
+
 def dti_dekads(sdate,edate):
     """
     Utility function to create a datetime index list in dekads between a defined start and end date
@@ -64,6 +77,19 @@ def dti_dekads(sdate,edate):
     d = dti.day - np.clip((dti.day-1) // 10, 0, 2)*10 - 1
     date = dti.values - np.array(d, dtype="timedelta64[D]")
     return pd.DatetimeIndex(np.unique(date))
+
+def dt_dekads(sdate,edate):
+    """
+    Utility function to create a datetime index list in dekads between a defined start and end date
+    :param sdate: start date, format 'YYYYMMDD'
+    :param edate: end date, format 'YYYYMMDD'
+    :return: datetimeindex in dekads
+    """
+    dti = pd.date_range(sdate,edate,freq='1D')
+    d = dti.day - np.clip((dti.day-1) // 10, 0, 2)*10 - 1
+    date = dti.values - np.array(d, dtype="timedelta64[D]")
+    return np.unique(date)
+
 
 def fill_gaps_df(index, df: pd.DataFrame) -> pd.DataFrame:
     """
