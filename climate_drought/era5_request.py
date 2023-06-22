@@ -24,6 +24,8 @@ from enum import Enum
 logging.basicConfig(level=logging.INFO)
 
 # Shared constants
+BOX_SIZE = 0.1
+
 PRECIP_VARIABLES = ['total_precipitation']
 SOILWATER_VARIABLES = ["volumetric_soil_water_layer_1", "volumetric_soil_water_layer_2",
                        "volumetric_soil_water_layer_3", "volumetric_soil_water_layer_4"]
@@ -44,8 +46,15 @@ class ERA5Request():
     def __init__(self, variables, fname_out, args: config.AnalysisArgs, config: config.Config,
                  start_date, end_date, frequency: Freq, aws=False):
 
-        self.latitude = args.latitude
-        self.longitude = args.longitude
+        bbox = len(args.longitude)>1
+        self.minlat = np.min(args.latitude) if bbox else float(args.latitude[0]) - BOX_SIZE
+        self.minlon = np.min(args.longitude) if bbox else float(args.longitude[0]) - BOX_SIZE
+
+        self.maxlat = np.max(args.latitude) if bbox else float(args.latitude[0]) + BOX_SIZE
+        self.maxlon = np.max(args.longitude) if bbox else float(args.longitude[0]) + BOX_SIZE
+
+        self.bbox = bbox
+
         self.start_date = start_date
         self.end_date = end_date
         self.variables = variables
@@ -84,8 +93,9 @@ class ERA5Download():
         Returns the path to the file that will be downloaded
         :return: path to the file that will be downloaded
         """
-        latstr = str(self.req.latitude).replace('[','').replace(']','').replace(', ','-')
-        lonstr = str(self.req.longitude).replace('[','').replace(']','').replace(', ','-')
+
+        latstr = str(self.req.minlat) + '-' + str(self.req.maxlat)
+        lonstr = str(self.req.minlon) + '-' + str(self.req.maxlon)
 
         file_str = "{sd}-{ed}_{la}_{lo}_{fq}".format(sd=self.req.start_date,
                                                      ed=self.req.end_date,
@@ -110,19 +120,11 @@ class ERA5Download():
         self.logger.info("Initiating download of ERA5 data.")
         self.logger.info("Variables to be downloaded: {}.".format(", ".join(self.req.variables)))
 
-        if (len(self.req.latitude)) > 1:
-            area_box = [round(np.max(self.req.latitude),2),
-                        round(np.min(self.req.longitude),2),
-                        round(np.min(self.req.latitude),2),
-                        round(np.max(self.req.longitude),2)
-            ]
-        else:
-            # Setup area of interest extraction
-            boxsz = 0.1
-            area_box = [round(float(self.req.latitude[0]) + boxsz, 2),
-                        round(float(self.req.longitude[0]) - boxsz, 2),
-                        round(float(self.req.latitude[0]) - boxsz, 2),
-                        round(float(self.req.longitude[0]) + boxsz, 2)]
+        area_box = [round(self.req.maxlat,2),
+                    round(self.req.minlon,2),
+                    round(self.req.minlat,2),
+                    round(self.req.maxlon,2)
+        ]
 
         if self.req.frequency==Freq.HOURLY:
             times = []

@@ -507,6 +507,20 @@ class SPI_ECMWF(DroughtIndex):
         self.logger.debug("Xarray:")
         self.logger.debug(ds)
 
+        # Mask polygon if needed
+        if self.sstype.value==SSType.POLYGON.value:
+            ds = utils.mask_ds_poly(
+                ds=ds,
+                lats=self.args.latitude,
+                lons=self.args.longitude,
+                grid_x=0.1,
+                grid_y=0.1,
+                ds_lat_name='latitude',
+                ds_lon_name='longitude',
+                other=OUTSIDE_AREA_SELECTION,
+                mask_bbox=False
+            )
+
         # Get total precipitation as data array
         da = ds.tp
 
