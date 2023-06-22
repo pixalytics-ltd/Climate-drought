@@ -113,7 +113,7 @@ def mask_ds_bbox(ds,minlon,maxlon,minlat,maxlat,ds_lon_name='lon',ds_lat_name='l
     return ds.where(valid_lat & valid_lon,drop=True)
 
     
-def mask_ds_poly(ds,lats,lons,grid_x,grid_y,other,ds_lat_name='lat',ds_lon_name='lon'):
+def mask_ds_poly(ds,lats,lons,grid_x,grid_y,other,ds_lat_name='lat',ds_lon_name='lon',mask_bbox=True):
     """
     Mask a xr.Dataset within Polygon defined by lat and lon coordinate lists.
     :param ds: dataset with time, lat and lom dimensions
@@ -124,9 +124,11 @@ def mask_ds_poly(ds,lats,lons,grid_x,grid_y,other,ds_lat_name='lat',ds_lon_name=
     :param ds_lat_name: ds coordinate label for latitude if not 'lat'
     :param ds_lon_name: ds coordinate label for longitue if not 'lon'
     :param other: value to replace masked out area values with. can use nan, but then you can't differentiate between actual nan data.
+    :param mask_bbox: option to quickly mask bbox before more slowly masking polygon.
     """
     # Reduce ds to bounding box before cutting out polygon
-    ds = mask_ds_bbox(ds,np.min(lons),np.max(lons),np.min(lats),np.max(lats),ds_lon_name,ds_lat_name)
+    if mask_bbox:
+        ds = mask_ds_bbox(ds,np.min(lons),np.max(lons),np.min(lats),np.max(lats),ds_lon_name,ds_lat_name)
 
     # Create a polygon of the area to be masked
     pn = Polygon(tuple([(x,y) for x,y in zip(lons,lats)]))

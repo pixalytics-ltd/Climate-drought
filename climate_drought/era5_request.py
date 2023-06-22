@@ -119,10 +119,10 @@ class ERA5Download():
         else:
             # Setup area of interest extraction
             boxsz = 0.1
-            area_box = [round(float(self.req.latitude) + boxsz, 2),
-                        round(float(self.req.longitude) - boxsz, 2),
-                        round(float(self.req.latitude) - boxsz, 2),
-                        round(float(self.req.longitude) + boxsz, 2)]
+            area_box = [round(float(self.req.latitude[0]) + boxsz, 2),
+                        round(float(self.req.longitude[0]) - boxsz, 2),
+                        round(float(self.req.latitude[0]) - boxsz, 2),
+                        round(float(self.req.longitude[0]) + boxsz, 2)]
 
         if self.req.frequency==Freq.HOURLY:
             times = []

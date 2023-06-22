@@ -499,40 +499,37 @@ class SPI_ECMWF(DroughtIndex):
         """
 
         # Extract data from NetCDF file
-        datxr = xr.open_dataset(self.download_obj.download_file_path)
+        ds = xr.open_dataset(self.download_obj.download_file_path)
 
-        if 'expver' in datxr.keys():
-            datxr = datxr.sel(expver=1,drop=True)
+        if 'expver' in ds.keys():
+            ds = ds.sel(expver=1,drop=True)
 
         self.logger.debug("Xarray:")
-        self.logger.debug(datxr)
+        self.logger.debug(ds)
+
+        # Get total precipitation as data array
+        da = ds.tp
+
+        # Set up SPI calculation  algorithm
+        spi = indices.INDICES()
 
         # Convert to monthly sums and extract max of the available cells
-        if self.config.aws: # or any other setting which would result in more than monthy data
-            precip = datxr.tp.resample(time='1MS').sum().max(['latitude', 'longitude']).load()
+        if self.config.aws or self.config.era_daily: # or any other setting which would result in more than monthy data
+            da = da.resample(time='1MS').sum()
+            
+        if self.sstype.value==SSType.POINT.value:
+            da = da.max(['latitude', 'longitude']).load()
+            spi_vals = spi.calc_spi(da)
         else:
-            precip = datxr.tp.max(['latitude', 'longitude']).load()
+            spi_vals = xr.apply_ufunc(spi.calc_spi,da,input_core_dims=[['time']],output_core_dims=[['time']],vectorize=True)
 
-        self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(precip.values), np.nanmin(precip.values), np.nanmax(precip.values)))
-
-        # Calculate SPI
-        spi = indices.INDICES()
-        spi_vals = spi.calc_spi(np.array(precip.values).flatten())
+        self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(da.values), np.nanmin(da.values), np.nanmax(da.values)))
         self.logger.info("SPI, {} values: {:.3f} {:.3f}".format(len(spi_vals), np.nanmin(spi_vals),np.nanmax(spi_vals)))
 
-        # Convert xarray to dataframe Series and add SPI
-        df = precip.to_dataframe()
-        df['spi'] = spi_vals
-        #df = df.reset_index(level=[1,2])
-        self.logger.debug("DF: ")
-        self.logger.debug(df.head())
+        # Store spi
+        ds = xr.Dataset(data_vars={'tp':da,'spi':spi_vals})
 
-        # Select requested time slice
-        self.logger.debug("Filtering between {} and {}".format(self.args.start_date, self.args.end_date))
-        self.logger.debug("Index: {}".format(df.index[0]))
-        df_filtered = utils.crop_df(df,self.args.start_date,self.args.end_date)
-
-        return df_filtered
+        return ds
     
     def process(self):
         """
@@ -546,18 +543,24 @@ class SPI_ECMWF(DroughtIndex):
             raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.spi_download.download_file_path))
         
         # Calculates SPI precipitation drought index
-        df_filtered = self.convert_precip_to_spi()
+        ds = self.convert_precip_to_spi()
+
+        # Select requested time slice
+        ds_filtered = utils.crop_ds(ds,self.args.start_date,self.args.end_date)
 
         # Fill any missing gaps
         time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
-        df_filtered = utils.fill_gaps(time_months,df_filtered)
+        ds_reindexed = ds_filtered.reindex({'time': time_months})
+
+        df_reindexed = ds_reindexed.to_dataframe().reset_index()
 
         # store processed data on object
-        self.data_df = df_filtered
+        self.data_ds = ds_reindexed
+        self.data_df = df_reindexed
 
         self.generate_output()
 
-        return df_filtered
+        return df_reindexed
 
 class SPI_GDO(GDODroughtIndex):
     """
