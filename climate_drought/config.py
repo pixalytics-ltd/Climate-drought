@@ -4,6 +4,8 @@ class AnalysisArgs():
     def __init__(self, latitude, longitude, start_date, end_date, product='SPI', oformat='GeoJSON'):
         self.latitude = latitude if type(latitude) == list else [latitude]
         self.longitude = longitude if type(longitude) == list else [longitude]
+        if len(self.longitude)!=len(self.latitude):
+            raise ValueError('Number of latitude and longitudes must be equal')
         self.start_date = start_date
         self.end_date = end_date
         self.indicator = product
