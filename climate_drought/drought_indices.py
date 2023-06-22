@@ -50,7 +50,7 @@ class SSType(Enum):
 
 # where working in netcdf, and if using a polygon, we need a value to show where in the grid is not included in the polygon (since xarray covers a rectangular/square lat/lon area)
 # this can't be nan as we can't differentiate between no data, so needs a unique value
-OUTSIDE_AREA_SELECTION = -99999
+OUTSIDE_AREA_SELECTION = np.nan#-99999
 
 class VarInfo():
     """
@@ -688,10 +688,33 @@ class SMA_ECMWF(DroughtIndex):
         monthly_swv = xr.open_dataset(path_monthly)
         sample_swv = xr.open_dataset(path_sample).squeeze()
 
+        # Mask initially using nans to exclude these values from mwn
+
+        # Reduce monthly data to what's relevant
+        if 'expver' in monthly_swv.keys():
+            monthly_swv = monthly_swv.isel(expver=0).drop_vars('expver')
+
+        if self.sstype.value==SSType.POINT:
+            monthly_swv = monthly_swv.mean(('latitude','longitude'))
+            sample_swv = sample_swv.drop_vars(['lat','lon'] if self.config.era_daily else ['latitude','longitude'])
+
+        swv_mean = monthly_swv.mean('time')
+        swv_std = monthly_swv.std('time')
+
+        # Resmple sample data to dekads
+        swv_dekads = utils.ds_to_dekads(sample_swv)
+        
+        # Calculate zscores
+        # Faster to just do this on all the data then remove the areas outside the polygon after
+        for layer in [1,2,3,4]:
+            col = 'swvl' + str(layer)
+            swv_dekads['zscore_' + col] = ((swv_dekads[col] - swv_mean[col]) / swv_std[col])
+
+        
         # Mask polygon if needed
         if self.sstype.value==SSType.POLYGON.value:
-            mask_ds = lambda ds: utils.mask_ds_poly(
-                ds=ds,
+            swv_dekads = utils.mask_ds_poly(
+                ds=swv_dekads,
                 lats=self.args.latitude,
                 lons=self.args.longitude,
                 grid_x=0.1,
@@ -701,27 +724,6 @@ class SMA_ECMWF(DroughtIndex):
                 other=OUTSIDE_AREA_SELECTION,
                 mask_bbox=False
             )
-            monthly_swv=mask_ds(monthly_swv)
-            sample_swv=mask_ds(sample_swv)
-
-        # Reduce monthly data to what's relevant
-        if 'expver' in monthly_swv.keys():
-            monthly_swv = monthly_swv.isel(expver=0).drop_vars('expver')
-
-        monthly_swv = monthly_swv.mean(('latitude','longitude'))
-        swv_mean = monthly_swv.mean('time')
-        swv_std = monthly_swv.std('time')
-
-        if self.sstype.value==SSType.POINT:
-            sample_swv = sample_swv.drop_vars(['lat','lon'] if self.config.era_daily else ['latitude','longitude'])
-
-        # Resmple sample data to dekads
-        swv_dekads = utils.ds_to_dekads(sample_swv)
-        
-        # Calculate zscores
-        for layer in [1,2,3,4]:
-            col = 'swvl' + str(layer)
-            swv_dekads['zscore_' + col] = ((swv_dekads[col] - swv_mean[col].item()) / swv_std[col].item())
 
         # fill any data gaps
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
@@ -735,7 +737,7 @@ class SMA_ECMWF(DroughtIndex):
         # Output to JSON
         self.generate_output()
 
-        return swv_dekads
+        return self.data_df
 
 class SMA_GDO(GDODroughtIndex):
     """
