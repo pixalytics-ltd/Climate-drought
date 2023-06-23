@@ -182,11 +182,13 @@ class DroughtIndex(ABC):
             # Extract columns as properties
             property = df.loc[i].to_json(date_format='iso', force_ascii = True)
             parsed = json.loads(property)
-            # properties = {}
+
+            # Add time as a property
+            properties = {}
             # dateval = pd.to_datetime(str(datevals[count])).strftime("%Y-%m-%d")
-            # properties.update({"_date": dateval})
-            # properties.update(parsed)
-            feature['properties'] = parsed
+            properties.update({"_date": i[0].strftime("%Y-%m-%d")})
+            properties.update(parsed)
+            feature['properties'] = properties
             #self.logger.debug("{} Feature {}: ".format(count, properties))
             # Add feature
             self.feature_collection['features'].append(feature)
