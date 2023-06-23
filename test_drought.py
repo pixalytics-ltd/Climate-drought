@@ -12,6 +12,7 @@ logging.basicConfig(level=logging.INFO)
 INDEX_MAP = {
     'SPI_ECMWF': dri.SPI_ECMWF,
     'SPI_GDO': dri.SPI_GDO,
+    'SPI_NCG': dri.SPI_NCG,
     'SMA_ECMWF': dri.SMA_ECMWF,
     'SMA_GDO': dri.SMA_GDO,
     'fAPAR': dri.FPAR_GDO,
