@@ -437,12 +437,20 @@ class GDODroughtIndex(DroughtIndex):
 
         def open_bbox(fname):
             ds = xr.open_dataset(fname).drop_vars(['4326'])
-            return utils.mask_ds_bbox(ds,
-                                        np.min(self.args.longitude),
-                                        np.max(self.args.longitude),
-                                        np.min(self.args.latitude),
-                                        np.max(self.args.latitude)
-            )
+            try:
+                mask = utils.mask_ds_bbox(ds,
+                    np.min(self.args.longitude),
+                    np.max(self.args.longitude),
+                    np.min(self.args.latitude),
+                    np.max(self.args.latitude))
+            except: # Expand bounds
+                mask = utils.mask_ds_bbox(ds,
+                    np.min(self.args.longitude)-(BOX_SIZE*3),
+                    np.max(self.args.longitude)+(BOX_SIZE*3),
+                    np.min(self.args.latitude)-(BOX_SIZE*3),
+                    np.max(self.args.latitude)+(BOX_SIZE*3))
+                self.logger.info("Needed to expand bounding box: {} ".format(mask.dims))
+            return mask
 
         def open_poly(fname):
             ds = xr.open_dataset(fname).drop_vars(['4326']) 
@@ -460,7 +468,7 @@ class GDODroughtIndex(DroughtIndex):
             SSType.POLYGON.value: open_poly
         }
 
-        # Open all dses and merge
+        # Open all ds data frames and merge
         ds = xr.merge(open_func[self.sstype.value](fname) for fname in self.filepaths)
 
         # Trim to required dates

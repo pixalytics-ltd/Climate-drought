@@ -125,7 +125,7 @@ def crop_ds(ds,sdate,edate) -> xr.Dataset:
 
 def mask_ds_bbox(ds,minlon,maxlon,minlat,maxlat,ds_lon_name='lon',ds_lat_name='lat'):
     """
-    Mask a xr.Dataset within bounding box defined by lat and lon mimn and max
+    Mask a xr.Dataset within bounding box defined by lat and lon min and max
     :param ds: dataset with time, lat and lon dimensions
     :param minlat: Minimum latitude of bounding box
     :param maxlat: Maximum latitude of bounding box
