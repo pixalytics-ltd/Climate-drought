@@ -550,7 +550,7 @@ class SPI_ECMWF(DroughtIndex):
             #print("ds: ",ds)
 
         else:
-            spi_vals = xr.apply_ufunc(spi.calc_spi,da,input_core_dims=[['time','latitude','longitude']],output_core_dims=[['time','latitude','longitude']],vectorize=True)
+            spi_vals = xr.apply_ufunc(spi.calc_spi,da,input_core_dims=[['time']],output_core_dims=[['time']],vectorize=True)
 
             # Store spi
             ds = xr.Dataset(data_vars={'tp':da,'spi':spi_vals})
