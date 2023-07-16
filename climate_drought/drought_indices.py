@@ -175,6 +175,7 @@ class DroughtIndex(ABC):
         # Build GeoJSON object
         self.feature_collection = {"type": "FeatureCollection", "features": []}
 
+        print("Sam: ", self.data_df)
         df = self.data_df.set_index(['time','latitude','longitude'])
         for i in df.index:
             feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [i[2], i[1]]}, "properties": {}}
@@ -352,8 +353,7 @@ class DroughtIndex(ABC):
         self.logger.info("Processing completed successfully for {}".format(json_file))
 
     def generate_output(self) -> None:
-        # Save JSON file
-        ## TODO SL to finish implementation of CoverageJSON so can be chosen option
+        # Save to chosen output format
         print('Generating output...')
         if not os.path.isfile(self.output_file_path):
             oformat = self.args.oformat.lower()
@@ -538,15 +538,25 @@ class SPI_ECMWF(DroughtIndex):
             
         if self.sstype.value==SSType.POINT.value:
             da = da.max(['latitude', 'longitude']).load()
+
+            # Calculate SPI from precip
             spi_vals = spi.calc_spi(da)
+
+            # Add back latitude and longitude as store ds
+            num_vals = len(da)
+            lat = np.repeat(self.args.latitude, num_vals)
+            lon = np.repeat(self.args.longitude, num_vals)
+            ds = xr.Dataset(data_vars={'tp': da, 'spi': ("time", spi_vals),'latitude': ("time", lat), 'longitude': ("time", lon)})
+            #print("ds: ",ds)
+
         else:
-            spi_vals = xr.apply_ufunc(spi.calc_spi,da,input_core_dims=[['time']],output_core_dims=[['time']],vectorize=True)
+            spi_vals = xr.apply_ufunc(spi.calc_spi,da,input_core_dims=[['time','latitude','longitude']],output_core_dims=[['time','latitude','longitude']],vectorize=True)
+
+            # Store spi
+            ds = xr.Dataset(data_vars={'tp':da,'spi':spi_vals})
 
         self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(da.values), np.nanmin(da.values), np.nanmax(da.values)))
         self.logger.info("SPI, {} values: {:.3f} {:.3f}".format(len(spi_vals), np.nanmin(spi_vals),np.nanmax(spi_vals)))
-
-        # Store spi
-        ds = xr.Dataset(data_vars={'tp':da,'spi':spi_vals})
 
         return ds
     
@@ -606,8 +616,6 @@ class SPI_GDO(GDODroughtIndex):
         # Drop locations outside of selected area
         df = df[df.spg03!=OUTSIDE_AREA_SELECTION]
         self.data_df = df
-
-        #self.generate_output()
 
         return df
 
@@ -881,8 +889,6 @@ class SMA_GDO(GDODroughtIndex):
         df = df[df.smant!=OUTSIDE_AREA_SELECTION]
         self.data_df = df
 
-        #self.generate_output()
-
         return df
 
 class FPAR_GDO(GDODroughtIndex):
@@ -910,8 +916,6 @@ class FPAR_GDO(GDODroughtIndex):
         # Drop locations outside of selected area
         df = df[df.fpanv!=OUTSIDE_AREA_SELECTION]
         self.data_df = df
-
-        #self.generate_output()
 
         return df
 
