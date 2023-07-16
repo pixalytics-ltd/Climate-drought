@@ -48,6 +48,10 @@ class SSType(Enum):
     BBOX = 'bbox'
     POLYGON = 'polygon'
 
+
+# Shared constants
+BOX_SIZE = 0.1
+
 # where working in netcdf, and if using a polygon, we need a value to show where in the grid is not included in the polygon (since xarray covers a rectangular/square lat/lon area)
 # this can't be nan as we can't differentiate between no data, so needs a unique value
 OUTSIDE_AREA_SELECTION = np.nan#-99999
@@ -135,8 +139,20 @@ class DroughtIndex(ABC):
         Returns the path to the output file from processing
         :return: path to the output file
         """
-        latstr = str(self.args.latitude).replace('[','').replace(']','').replace(', ','-')
-        lonstr = str(self.args.longitude).replace('[','').replace(']','').replace(', ','-')
+
+        bbox = len(self.args.longitude)>1
+        minlat = np.min(self.args.latitude) if bbox else float(self.args.latitude[0]) - BOX_SIZE
+        minlon = np.min(self.args.longitude) if bbox else float(self.args.longitude[0]) - BOX_SIZE
+
+        maxlat = np.max(self.args.latitude) if bbox else float(self.args.latitude[0]) + BOX_SIZE
+        maxlon = np.max(self.args.longitude) if bbox else float(self.args.longitude[0]) + BOX_SIZE
+
+        if bbox:
+            latstr = str("{0:.2f}".format(minlat)) + '-' + str("{0:.2f}".format(maxlat))
+            lonstr = str("{0:.2f}".format(minlon)) + '-' + str("{0:.2f}".format(maxlon))
+        else:
+            latstr = str("{0:.2f}".format(float(self.args.latitude[0])))
+            lonstr = str("{0:.2f}".format(float(self.args.longitude[0])))
 
         file_str = "{sd}-{ed}_{la}_{lo}".format(sd=self.args.start_date, ed=self.args.end_date, la=latstr, lo=lonstr)
         oformat = self.args.oformat.lower()
@@ -175,10 +191,10 @@ class DroughtIndex(ABC):
         # Build GeoJSON object
         self.feature_collection = {"type": "FeatureCollection", "features": []}
 
-        print("Sam: ", self.data_df)
+        #print("Data frame: ", self.data_df)
         df = self.data_df.set_index(['time','latitude','longitude'])
         for i in df.index:
-            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [i[2], i[1]]}, "properties": {}}
+            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(i[2]), float(i[1])]}, "properties": {}}
 
             # Extract columns as properties
             property = df.loc[i].to_json(date_format='iso', force_ascii = True)
@@ -282,10 +298,10 @@ class DroughtIndex(ABC):
         yaml_dict = {}
         ## [bounds.left, bounds.bottom, bounds.right, bounds.top]
         if self.sstype==SSType.POINT:
-            minlo = self.args.longitude[0]-0.1
-            minla = self.args.latitude[0]-0.1
-            maxlo = self.args.longitude[0]+0.1
-            maxla = self.args.latitude[0]+0.1
+            minlo = self.args.longitude[0]-BOX_SIZE
+            minla = self.args.latitude[0]-BOX_SIZE
+            maxlo = self.args.longitude[0]+BOX_SIZE
+            maxla = self.args.latitude[0]+BOX_SIZE
         else:
             minlo = np.min(self.args.longitude)
             minla = np.min(self.args.latitude)
