@@ -94,8 +94,8 @@ class ERA5Download():
         :return: path to the file that will be downloaded
         """
 
-        latstr = str(self.req.minlat) + '-' + str(self.req.maxlat)
-        lonstr = str(self.req.minlon) + '-' + str(self.req.maxlon)
+        latstr = str("{0:.2f}".format(self.req.minlat)) + '-' + str("{0:.2f}".format(self.req.maxlat))
+        lonstr = str("{0:.2f}".format(self.req.minlon)) + '-' + str("{0:.2f}".format(self.req.maxlon))
 
         file_str = "{sd}-{ed}_{la}_{lo}_{fq}".format(sd=self.req.start_date,
                                                      ed=self.req.end_date,
