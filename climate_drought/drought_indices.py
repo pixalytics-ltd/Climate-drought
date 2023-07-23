@@ -193,6 +193,10 @@ class DroughtIndex(ABC):
 
         #print("Data frame: ", self.data_df)
         df = self.data_df.set_index(['time','latitude','longitude'])
+
+        # Drop if whole row is NANs
+        df = df.dropna(how='all')
+
         for i in df.index:
             feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(i[2]), float(i[1])]}, "properties": {}}
 
@@ -206,7 +210,7 @@ class DroughtIndex(ABC):
             properties.update({"_date": i[0].strftime("%Y-%m-%d")})
             properties.update(parsed)
             feature['properties'] = properties
-            #self.logger.debug("{} Feature {}: ".format(count, properties))
+            #self.logger.info("{} Feature: {}".format(i, properties))#['spi']))
             # Add feature
             self.feature_collection['features'].append(feature)
         dump = geojson.dumps(self.feature_collection, indent=4)
@@ -224,10 +228,13 @@ class DroughtIndex(ABC):
          :return: path to the json file
          """
 
+        # Drop if whole time-series is NANs
+        df = self.data_ds.dropna(dim='time', how='all')
+
         # Extract dates and values
-        dates = self.data_ds.time.values
-        latitudes = self.data_ds.latitude.values
-        longitudes = self.data_ds.longitude.values
+        dates = df.time.values
+        latitudes = df.latitude.values
+        longitudes = df.longitude.values
 
         parameters = dict()
         ranges = dict()
@@ -253,7 +260,7 @@ class DroughtIndex(ABC):
             ranges[key] = NdArray(
                 axisNames=["x","y","t"],
                 shape=[len(longitudes),len(latitudes),len(dates)],
-                values=self.data_ds[key].to_numpy().flatten().tolist()
+                values=df[key].to_numpy().flatten().tolist()
                 )
 
         # Create Structure
@@ -372,14 +379,28 @@ class DroughtIndex(ABC):
         # Save to chosen output format
         print('Generating output...')
         if not os.path.isfile(self.output_file_path):
+
             oformat = self.args.oformat.lower()
             if "cov" in oformat:  # Generate CoverageJSON file
+
                 self.generate_covjson()
+
             elif "csv" in oformat:  # Generate CSV
-                self.data_df.to_csv(self.output_file_path,index=False)
+
+                # drop if whole row is NANs
+                df = self.data_df.dropna(how='all')
+
+                df.to_csv(self.output_file_path,index=False)
+
             elif "net" in oformat:  # Generate NetCDF
-                xr.Dataset(self.data_ds).to_netcdf(self.output_file_path)
+
+                # drop if whole time-series is NANs
+                df = self.data_ds.dropna(dim='time', how='all')
+
+                xr.Dataset(df).to_netcdf(self.output_file_path)
+
             else:  # Generate GeoJSON
+
                 self.generate_geojson()
         else:
             self.logger.warning('Outfile not written: already exists')
@@ -1018,12 +1039,6 @@ class CDI(DroughtIndex):
         da_sma = self.sma.data_ds[self.args.sma_var]
         da_fpr = self.fpr.data_ds[self.args.fpr_var]
 
-        # drop values outside requested area if polygon
-        if self.sstype.value is SSType.POLYGON.value:
-            da_spi = da_spi.where(da_spi != OUTSIDE_AREA_SELECTION)
-            da_sma = da_sma.where(da_sma != OUTSIDE_AREA_SELECTION)
-            da_fpr = da_fpr.where(da_fpr != OUTSIDE_AREA_SELECTION)
-
         # Interpolate SMA and FPR to same grid as CDI
         if not (self.sstype.value is SSType.POINT.value):
             da_sma = utils.regrid_like(da_sma,da_spi)
@@ -1031,6 +1046,12 @@ class CDI(DroughtIndex):
 
         da_sma = da_sma.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
         da_fpr = da_fpr.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
+
+        # drop values outside requested area if polygon
+        if self.sstype.value is SSType.POLYGON.value:
+            da_spi = da_spi.where(da_spi != OUTSIDE_AREA_SELECTION)
+            da_sma = da_sma.where(da_sma != OUTSIDE_AREA_SELECTION)
+            da_fpr = da_fpr.where(da_fpr != OUTSIDE_AREA_SELECTION)
 
         # Reindex to shared timeframe
         spi_reindexed = da_spi.reindex({'time':self.time_dekads},method='ffill')
