@@ -35,7 +35,7 @@ To run:
 - ensure streamlit=1.8.1 is installed in your environmnt
 - change `OUTPUT_DIR` to location of downloaded netcdf files from ECMWF and output JSON files
 - the `DOWNLOADED` constant is a dictionary containing the details of data which has already been downloaded. I recommend downloading the required data for a number of test case CDI's using the test_drought script, because the web app will hang if you try to download data while that's running. Bear in mind that the dates of the individual index data will not be the same as the arguments specified here, as the CDI requires longer time-periods of indices.
-- in the command line, activate climate-env
+- in the command line, activate climate_env
 - enter `streamlit run index_viewer.py`
 The web app will start up in a window in your browser.
 
