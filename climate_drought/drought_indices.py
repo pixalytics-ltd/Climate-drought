@@ -103,15 +103,19 @@ class DroughtIndex(ABC):
         self.vars = vars
 
         # turn lat, lon input into a list if necessary
-        if not isinstance(args.latitude,list):
-            self.args.latitude = [args.latitude]
-        if not isinstance(args.longitude,list):
-            self.args.longitude = [args.longitude]
-        if not len(self.args.latitude)==len(self.args.latitude):
-            self.logger.error('Latitude and longitude input must be single numbers or lists of the same length.')
-            quit()
+        if args.singleval:
+            self.args.latitude = args.latitude
+            self.args.longitude = args.longitude
+        else:
+            if not isinstance(args.latitude,list):
+                self.args.latitude = [args.latitude]
+            if not isinstance(args.longitude,list):
+                self.args.longitude = [args.longitude]
+            if not len(self.args.latitude)==len(self.args.latitude):
+                self.logger.error('Latitude and longitude input must be single numbers or lists of the same length.')
+                quit()
 
-        # determine if we'e dealing with a point, polygon or bounding box
+        # determine if we're dealing with a point, polygon or bounding box
         if len(self.args.latitude)==1:
             self.sstype = SSType.POINT
         elif len(self.args.latitude)==2:
@@ -805,7 +809,7 @@ class SMA_ECMWF(DroughtIndex):
     
     def download(self):
         """
-        Download requried data from ERA5 portal using the imported ERA5 request module.
+        Download required data from ERA5 portal using the imported ERA5 request module.
         Download long term monthly data for the long term mean, and separately hourly data for short term period.
         """
         def exists_or_download(erad: erq.ERA5Download):
@@ -887,6 +891,7 @@ class SMA_ECMWF(DroughtIndex):
 
         self.data_ds = swv_dekads
         self.data_df = swv_dekads.to_dataframe().reset_index()
+        #self.logger.info("data_df: {}".format(self.data_df))
 
         # Output to JSON
         self.generate_output()
@@ -1040,14 +1045,29 @@ class CDI(DroughtIndex):
         da_fpr = self.fpr.data_ds[self.args.fpr_var]
 
         # Interpolate SMA and FPR to same grid as CDI
-        if not (self.sstype.value is SSType.POINT.value):
+        self.logger.info("Type {} singleval {}".format(self.sstype.value,self.args.singleval))
+        if (self.sstype.value is SSType.POINT.value and not self.args.singleval):
             da_sma = utils.regrid_like(da_sma,da_spi)
             da_fpr = utils.regrid_like(da_fpr,da_spi)
 
-        da_sma = da_sma.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
-        da_fpr = da_fpr.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
+        # Reduce SMA and FPR to point series for viewer
+        if self.args.singleval:
+            da_sma = da_sma.mean(dim='longitude').mean(dim='latitude')
+            da_fpr = da_fpr.mean(dim='longitude').mean(dim='latitude')
 
-        # drop values outside requested area if polygon
+            # Setup data frame for lat & lon data access
+            df_spi = self.spi.data_df
+            df_spi = df_spi[~df_spi.index.duplicated()]
+
+            da_sma = da_sma.reindex({'latitude':df_spi.latitude,'longitude':df_spi.longitude},method='nearest')
+            da_fpr = da_fpr.reindex({'latitude':df_spi.latitude,'longitude':df_spi.longitude},method='nearest')
+
+        else:
+            da_sma = da_sma.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
+            da_fpr = da_fpr.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
+
+
+        # Drop values outside requested area if polygon
         if self.sstype.value is SSType.POLYGON.value:
             da_spi = da_spi.where(da_spi != OUTSIDE_AREA_SELECTION)
             da_sma = da_sma.where(da_sma != OUTSIDE_AREA_SELECTION)
@@ -1057,6 +1077,10 @@ class CDI(DroughtIndex):
         spi_reindexed = da_spi.reindex({'time':self.time_dekads},method='ffill')
         sma_reindexed = da_sma.reindex({'time':self.time_dekads})
         fpr_reindexed = da_fpr.reindex({'time':self.time_dekads})
+
+        #self.logger.info("SPI reindexed: {}".format(spi_reindexed))
+        #self.logger.info("SMA reindexed: {}".format(sma_reindexed))
+        #self.logger.info("FPR reindexed: {}".format(fpr_reindexed))
 
         self.ds_reindexed = xr.Dataset(data_vars = {self.args.spi_var: spi_reindexed,
                                                     self.args.sma_var: sma_reindexed,
@@ -1097,5 +1121,6 @@ class CDI(DroughtIndex):
         self.generate_output()
 
         self.logger.info("Completed processing of ERA5 CDI data.")
+        #self.logger.info(self.data_df)
         return self.data_df
     

@@ -23,6 +23,7 @@ dependencies:
     - kerchunk
     - netcdf4
     - numba==0.56.4
+    - opencv-python
     - pygeometa
     - python-snappy
     - s3fs
