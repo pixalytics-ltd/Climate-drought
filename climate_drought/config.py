@@ -29,19 +29,11 @@ class CDIArgs(AnalysisArgs):
         self.singleval = singleval # Used for viewer
 
 class Config():
-    def __init__(self,outdir='output',indir='input',verbose=True,baseline_start='19850101',baseline_end=None,aws=False,era_daily=False):
+    def __init__(self,outdir='output',indir='input',verbose=True,baseline_start='19850101',baseline_end='20221231',aws=False,era_daily=False):
         self.outdir = outdir
         self.indir = indir
         self.verbose = verbose
         self.baseline_start = baseline_start
         self.aws = aws
         self.era_daily = era_daily
-
-        if baseline_end==None:
-            ddn = datetime.now()
-            yyyy = str(ddn.year)
-            mm = ('0' if ddn.month<10 else '') + str(ddn.month)
-            dd = ('0' if ddn.day<10 else '') + str(ddn.day)
-            baseline_end = yyyy + mm + dd
-
         self.baseline_end = baseline_end

@@ -889,9 +889,14 @@ class SMA_ECMWF(DroughtIndex):
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
+        # Remove expver duplicates if present
+        if 'expver' in swv_dekads.keys():
+            swv_dekads = swv_dekads.sel(expver=1,drop=True)
+
+        # Create final data frame and
         self.data_ds = swv_dekads
         self.data_df = swv_dekads.to_dataframe().reset_index()
-        #self.logger.info("data_df: {}".format(self.data_df))
+        self.logger.info("data_df: {}".format(self.data_df))
 
         # Output to JSON
         self.generate_output()

@@ -1,4 +1,5 @@
 import datetime
+import logging
 import numpy as np
 import pandas as pd
 import io
@@ -11,6 +12,10 @@ from typing import List
 
 # Links from Climate-drought repository
 from climate_drought import config, drought_indices as dri
+from climate_drought import load_local_file as local
+
+# Logging
+logging.basicConfig(level=logging.INFO)
 
 OUTPUT_DIR = 'output'
 
@@ -27,7 +32,9 @@ else:
     C_ALERT2 = 'darkred'
 
 DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231',singleval=True),
-              'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231',singleval=True)}
+              'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231',singleval=True),
+              'Canada Pilot Report, 2022-2023': config.AnalysisArgs(55.5, -99.1, '20220131', '20230331',singleval=True),
+                  'Canada with Safe extraction of climate forecast data, 2022-2022+': config.AnalysisArgs(50.06, -97.49, '20220131', '20221231',singleval=True)}
 
 SMA_LEVEL_DEFAULT = 'zscore_swvl3'
 
@@ -91,11 +98,22 @@ def load_index(index: dri.DroughtIndex,cfg: config.Config,aa:config.AnalysisArgs
 def load_indices(cdi: dri.CDI):
 
     # Make sure everything is already downloaded else it'll take ages
+    logging.info("Calculating ECMWF SPI")
     spi_ecmwf = load_index(dri.SPI_ECMWF,cdi.config,cdi.aa_spi)
+    logging.info("Calculating GDO SPI")
     spi_gdo = load_index(dri.SPI_GDO,cdi.config,cdi.aa_spi)
+    logging.info("Calculating ECMWF SMA")
     sma_ecmwf = load_index(dri.SMA_ECMWF,cdi.config,cdi.aa_sma)
+    logging.info("Calculating GDO SMA")
     sma_gdo = load_index(dri.SMA_GDO,cdi.config,cdi.aa_sma)
+    logging.info("Calculating FAPAR")
     fapar = load_index(dri.FPAR_GDO,cdi.config,cdi.aa_fpr)
+
+    # Load precip anomaly data from SAFE software
+    if aa.latitude == 50.06:
+        safe = local.LoadSAFE(logger=logging)
+        spi_ecmwf = safe.load_safe(spi_ecmwf, lat_val=aa.latitude, lon_val=aa.longitude)
+        aa.end_date = '20241231'
 
     return spi_ecmwf, spi_gdo, sma_ecmwf, sma_gdo, fapar
 
@@ -111,6 +129,7 @@ def load_cdi(aa: config.AnalysisArgs,cf: config.Config,source,sma_var):
         sma_var=sma_var,
         singleval=aa.singleval
     )
+    logging.info("Calculating CDI")
     cdi = load_index(dri.CDI,cf,aa_cdi)
 
     return cdi
@@ -283,20 +302,20 @@ with col2:
 
     #cv2.imwrite(fn, v_img)
 
-def process_image(v_img):
-    buf = io.BytesIO()
-    fig, ax = plt.subplots()
-    ax.imshow(v_img)
-    plt.axis('off')
-    ax.axes.get_xaxis().set_visible(False)
-    ax.axes.get_yaxis().set_visible(False)
-    fig.savefig(buf, format='png', dpi=600, bbox_inches='tight', pad_inches = 0)
-    return buf
+    def process_image(v_img):
+        buf = io.BytesIO()
+        fig, ax = plt.subplots()
+        ax.imshow(v_img)
+        plt.axis('off')
+        ax.axes.get_xaxis().set_visible(False)
+        ax.axes.get_yaxis().set_visible(False)
+        fig.savefig(buf, format='png', dpi=600, bbox_inches='tight', pad_inches = 0)
+        return buf
 
-btn = st.download_button(
-    label="Download image",
-    data=process_image(v_img),
-    file_name=fn,
-    mime="image/png"
-)
+    btn = st.download_button(
+        label="Download image",
+        data=process_image(v_img),
+        file_name=fn,
+        mime="image/png"
+    )
 
