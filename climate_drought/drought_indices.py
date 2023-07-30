@@ -210,7 +210,7 @@ class DroughtIndex(ABC):
             properties.update({"_date": i[0].strftime("%Y-%m-%d")})
             properties.update(parsed)
             feature['properties'] = properties
-            #self.logger.info("{} Feature: {}".format(i, properties))#['spi']))
+            self.logger.debug("{} Feature {}: ".format(count, properties))
             # Add feature
             self.feature_collection['features'].append(feature)
         dump = geojson.dumps(self.feature_collection, indent=4)
@@ -579,7 +579,7 @@ class SPI_ECMWF(DroughtIndex):
 
         # Convert to monthly sums and extract max of the available cells
         if self.config.aws or self.config.era_daily: # or any other setting which would result in more than monthy data
-            da = da.resample(time='1MS').sum()
+            da = da.resample(time='1MS').sum()#.max(['latitude', 'longitude']).load()
             
         if self.sstype.value==SSType.POINT.value:
             da = da.max(['latitude', 'longitude']).load()

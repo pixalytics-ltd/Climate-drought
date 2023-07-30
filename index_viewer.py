@@ -1,3 +1,4 @@
+import logging
 import datetime
 import glob
 import numpy as np
@@ -10,6 +11,10 @@ from typing import List
 
 # Links from Climate-drought repository
 from climate_drought import config, drought_indices as dri
+from climate_drought import load_local_file as local
+
+# Logging
+logging.basicConfig(level=logging.INFO)
 
 OUTPUT_DIR = 'output'
 
@@ -19,13 +24,17 @@ C_ALERT1 = 'orangered'
 C_ALERT2 = 'crimson'
 
 DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231'),
-              'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231')}
+    'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231'),
+    'Canada CPilot Report, 2022-2023': config.AnalysisArgs(55.5, -99.1, '20220131', '20230331'),
+    'Canada with Safe extraction of climate forecast data, 2022-2022+': config.AnalysisArgs(50.06, -97.49, '20220131', '20221231')}
 
 SMA_LEVEL_DEFAULT = 'zscore_swvl3'
 
-RESTRICT_DATA_SELECTION = False
+# Have pre-loaded locations rather than Latitude/Longitude inputs
+RESTRICT_DATA_SELECTION = True
 
 st.set_page_config(layout="wide")
+
 
 def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,warning_var=None):
 
@@ -135,7 +144,8 @@ def draw_map(aa):
 
 cf = config.Config(outdir= 'output')
 
-plot_options = {'SPI (ECMWF)':False,
+plot_options = {'Precip (ECMWF)':False,
+                'SPI (ECMWF)':False,
                 'SPI (GDO)': False,
                 'SMA (ECMWF)':False,
                 'SMA (GDO)':False,
@@ -199,6 +209,13 @@ with st.sidebar:
         df_sma_edo = cdi_gdo.sma.data
         df_fpr = cdi_gdo.fpr.data
 
+        # Load precip anomaly data from SAFE software
+        if aa.latitude == 50.06:
+
+            safe = local.LoadSAFE(logger=logging)
+            df_spi_ecmwf = safe.load_safe(df_spi_ecmwf, lat_val=aa.latitude, lon_val=aa.longitude)
+            aa.end_date = '20241231'
+
         #ds_swvl = load_era_soilmoisture(sma_ecmwf.download_obj_baseline.download_file_path)
 
         st.header('Compare Indices:')
@@ -217,6 +234,10 @@ with col1:
 figs = []
 
 if view == "Index Comparison":
+
+    if plot_options['Precip (ECMWF)']:
+        fig, ax = plot(df_spi_ecmwf,['tp'],'Precipitation (ECMWF)',warning=-1,warning_var='tp')
+        figs.append(fig)
 
     if plot_options['SPI (ECMWF)']:
         fig, ax = plot(df_spi_ecmwf,['spi'],'Standardised Precipitation Index (ECMWF)',warning=-1,warning_var='spi')
