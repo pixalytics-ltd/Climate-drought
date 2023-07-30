@@ -34,6 +34,6 @@ class Config():
         self.indir = indir
         self.verbose = verbose
         self.baseline_start = baseline_start
+        self.baseline_end = baseline_end
         self.aws = aws
         self.era_daily = era_daily
-        self.baseline_end = baseline_end

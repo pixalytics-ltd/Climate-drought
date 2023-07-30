@@ -1,3 +1,4 @@
+import logging
 import datetime
 import logging
 import numpy as np
@@ -38,9 +39,14 @@ DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','
 
 SMA_LEVEL_DEFAULT = 'zscore_swvl3'
 
+
+SMA_LEVEL_DEFAULT = 'zscore_swvl3'
+
+# Use pre-loaded locations rather than Latitude/Longitude inputs
 RESTRICT_DATA_SELECTION = True
 
 st.set_page_config(layout="wide")
+
 
 def plot(df:pd.DataFrame,varnames:List[str],title:str,showmean=False,warning=0,warning_var=None):
 
@@ -164,7 +170,8 @@ def draw_map(aa):
 
 cf = config.Config(outdir= 'output')
 
-plot_options = {'SPI (ECMWF)':False,
+plot_options = {'Precip (ECMWF)':False,
+                'SPI (ECMWF)':False,
                 'SPI (GDO)': False,
                 'SMA (ECMWF)':False,
                 'SMA (GDO)':False,
@@ -230,6 +237,13 @@ with st.sidebar:
         df_sma_edo = cdi_gdo.sma.data_df
         df_fpr = cdi_gdo.fpr.data_df
 
+        # Load precip anomaly data from SAFE software
+        if aa.latitude == 50.06:
+
+            safe = local.LoadSAFE(logger=logging)
+            df_spi_ecmwf = safe.load_safe(df_spi_ecmwf, lat_val=aa.latitude, lon_val=aa.longitude)
+            aa.end_date = '20241231'
+
         #ds_swvl = load_era_soilmoisture(sma_ecmwf.download_obj_baseline.download_file_path)
 
         st.header('Compare Indices:')
@@ -248,6 +262,10 @@ with col1:
 figs = []
 
 if view == "Index Comparison":
+
+    if plot_options['Precip (ECMWF)']:
+        fig, ax = plot(df_spi_ecmwf,['tp'],'Precipitation (ECMWF)',warning=-1,warning_var='tp')
+        figs.append(fig)
 
     if plot_options['SPI (ECMWF)']:
         fig = plot(df_spi_ecmwf,['spi'],'Standardised Precipitation Index (ECMWF)',warning=-1,warning_var='spi')
