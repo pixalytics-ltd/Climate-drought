@@ -2,19 +2,19 @@
 The Drought Severity Workflow (DSW) is built using individal drought indicators and brings them together using the Combined Drought Indicator (CDI) developed by Sepulcre-Canto et al., 2012).
 
 ==== Drought Indicator Descriptions
-The Drought Indicator API may be used to obtain any of the following indicators for a given latitude, longitude and time period.
+The Drought Indicator API may be used to obtain any of the following indicators for a given latitude, longitude and time period. If a single latitude and longitude are provided, data for a single point will be returned. If two latitdudes and longitudes are provided, data within a bounding box cornered by the latitude and longitude values will be returned. If three or more latitude and longitude values are provided, data within a polygon will be returned.
 
 _Standardised Precipitation Index_
 
-The Standardised Precipitation Index (SPI) is a statistical value describing the amount of rainfall in a given time period relative to a longer time period for a given location. The SPI is a common drought indicator and provides an early warning of an impending drought. SPI is computed in monthly time intervals.
+The Standardised Precipitation Index (SPI) is a statistical value describing the amount of rainfall in a given time period relative to a longer time period for a given location. The SPI is a common drought indicator and provides an early warning of an impending drought. SPI is computed in monthly time intervals. The SPI can be obtained directly from the Global Drought Observatory (GDO) or computed using total precipitation from the ERA5 reanalysis from ECMWF.
 
 _Soil Moisture Anomaly_
 
-The Soil Moisture Anomaly (SMA) is another common indicator for agricultural drought, as it results from prolonged lack of rainfall and can precede poor vegetation health. A surface SMA can be obtained from satellite data, or the SMA at greater depths into the soil from reanalyses or models. The SMA is computed relative to a long-term baseline period for a given location and is provided at a frequency of dekads.
+The Soil Moisture Anomaly (SMA) is another common indicator for agricultural drought, as it results from prolonged lack of rainfall and can precede poor vegetation health. A surface SMA can be obtained from satellite data, or the SMA at greater depths into the soil from reanalyses or models. The SMA is computed relative to a long-term baseline period for a given location and is provided at a frequency of dekads. The SMA can be obtained directly from the Global Drought Observatory (GDO) or computed using soil water volume from the ERA5 reanalysis from ECMWF.The ERA5 data is available for 4 different soil levels.
 
 _Fraction of Absorbed Photosynthetically Active Radiation_
 
-The fraction of Absorbed Photosynthetically Active Radiation (fAPAR) is a satellite-derived value describing the proportion of solar radiation used directly by plants for growth and provides an indication of plant health. A drawback of using fAPAR as a drought indicator is that lower values can result from non-drought related events, such as disease. The fAPAR anomaly is computed relative to a long-term baseline period for a given location and is provided at a freqency of dekads.
+The fraction of Absorbed Photosynthetically Active Radiation (fAPAR) is a satellite-derived value describing the proportion of solar radiation used directly by plants for growth and provides an indication of plant health. A drawback of using fAPAR as a drought indicator is that lower values can result from non-drought related events, such as disease. The fAPAR anomaly is computed relative to a long-term baseline period for a given location and is provided at a freqency of dekads. The fAPAR is obtained from GDO only.
 
 _The Combined Drought Indicator_
 

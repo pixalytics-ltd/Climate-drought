@@ -27,5 +27,6 @@ dependencies:
     - python-snappy
     - s3fs
     - scipy
+    - shapely
     - sentinelsat
 prefix: ~/anaconda3/envs/climate_env
