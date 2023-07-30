@@ -71,13 +71,13 @@ class LoadSAFE():
             df_safe = df_safe.drop('latitude', 1).drop('longitude', 1)
 
             # Convert time then set as index
-            df_safe['time'] = df_safe['time'].astype('datetime64')
-            df_safe = df_safe.set_index('time')
+            #df_safe['time'] = df_safe['time'].astype('datetime64')
+            #df_safe = df_safe.set_index('time')
 
             # Add df_safe to existing df_spi dataset and extract precip
-            self.logger.debug("df_safe: ",df_safe)
+            self.logger.info("df_safe: ",df_safe)
             df_spi = df_spi.drop('spi',1)
-            self.logger.debug("df_spi: ",df_spi)
+            self.logger.info("df_spi: ",df_spi)
             df = pd.concat([df_spi, df_safe])
             self.logger.info("SAFE Climate scenario extension, df: ",df)
 
@@ -88,7 +88,7 @@ class LoadSAFE():
             spi_vals = spi.calc_spi(np.array(precip.values).flatten())
             self.logger.info("SPI, {} values: {:.3f} {:.3f}".format(len(spi_vals), np.nanmin(spi_vals),np.nanmax(spi_vals)))
 
-            # Add SPI and drop Latitude and Longitude
+            # Add SPI
             df['spi'] = spi_vals
 
         return df
@@ -98,7 +98,6 @@ def main():
     df_spi_reanalysis = pd.DataFrame([],columns=['time', 'tp','spi'])
     safe = LoadSAFE(logger=logging)
     df_safe = safe.load_safe(df_spi_reanalysis)
-    print("Loaded: ",df_safe)
 
 if __name__ == "__main__":
     exit(main())

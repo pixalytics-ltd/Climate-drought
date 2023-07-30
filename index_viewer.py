@@ -34,7 +34,7 @@ else:
 
 DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231',singleval=True),
               'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231',singleval=True),
-              'Canada Pilot Report, 2022-2023': config.AnalysisArgs(55.5, -99.1, '20220131', '20230331',singleval=True),
+              'Canada Pilot Report, 2020-2022': config.AnalysisArgs(55.5, -99.1, '20200131', '20220331',singleval=True),
                   'Canada with Safe extraction of climate forecast data, 2022-2022+': config.AnalysisArgs(50.06, -97.49, '20220131', '20221231',singleval=True)}
 
 SMA_LEVEL_DEFAULT = 'zscore_swvl3'
@@ -264,7 +264,7 @@ figs = []
 if view == "Index Comparison":
 
     if plot_options['Precip (ECMWF)']:
-        fig, ax = plot(df_spi_ecmwf,['tp'],'Precipitation (ECMWF)',warning=-1,warning_var='tp')
+        fig = plot(df_spi_ecmwf,['tp'],'Precipitation (ECMWF)',warning=-1,warning_var='tp')
         figs.append(fig)
 
     if plot_options['SPI (ECMWF)']:
@@ -330,10 +330,12 @@ with col2:
         fig.savefig(buf, format='png', dpi=600, bbox_inches='tight', pad_inches = 0)
         return buf
 
-    btn = st.download_button(
-        label="Download image",
-        data=process_image(v_img),
-        file_name=fn,
-        mime="image/png"
-    )
+    if len(figs) > 0:
+
+        btn = st.download_button(
+            label="Download image",
+            data=process_image(v_img),
+            file_name=fn,
+            mime="image/png"
+        )
 
