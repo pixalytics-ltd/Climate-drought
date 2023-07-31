@@ -34,7 +34,7 @@ else:
 
 DOWNLOADED = {'SE England, 2020-2022':config.AnalysisArgs(52.5,1.25,'20200121','20221231',singleval=True),
               'US West Coast, 2020-2022':config.AnalysisArgs(36,-120,'20200121','20221231',singleval=True),
-              'Canada Pilot Report, 2020-2022': config.AnalysisArgs(55.5, -99.1, '20200131', '20220331',singleval=True),
+              'Canada Pilot Report, 2020-2022': config.AnalysisArgs(55.5, -99.1, '20200131', '20221231',singleval=True),
                   'Canada with Safe extraction of climate forecast data, 2022-2022+': config.AnalysisArgs(50.06, -97.49, '20220131', '20221231',singleval=True)}
 
 SMA_LEVEL_DEFAULT = 'zscore_swvl3'
