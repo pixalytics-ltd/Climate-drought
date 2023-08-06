@@ -102,19 +102,15 @@ class DroughtIndex(ABC):
         self.vars = vars
 
         # turn lat, lon input into a list if necessary
-        if args.singleval:
-            self.args.latitude = args.latitude
-            self.args.longitude = args.longitude
-        else:
-            if not isinstance(args.latitude,list):
-                self.args.latitude = [args.latitude]
-            if not isinstance(args.longitude,list):
-                self.args.longitude = [args.longitude]
-            if not len(self.args.latitude)==len(self.args.latitude):
-                self.logger.error('Latitude and longitude input must be single numbers or lists of the same length.')
-                quit()
+        if not isinstance(args.latitude,list):
+            self.args.latitude = [args.latitude]
+        if not isinstance(args.longitude,list):
+            self.args.longitude = [args.longitude]
+        if not len(self.args.latitude)==len(self.args.latitude):
+            self.logger.error('Latitude and longitude input must be single numbers or lists of the same length.')
+            quit()
 
-        # determine if we're dealing with a point, polygon or bounding box
+        # determine if we'e dealing with a point, polygon or bounding box
         if len(self.args.latitude)==1:
             self.sstype = SSType.POINT
         elif len(self.args.latitude)==2:
@@ -423,16 +419,18 @@ class GDODroughtIndex(DroughtIndex):
         super().__init__(config,args,vars)
         self.grid_size = next(iter(self.vars.values())).gridsize
         self.fileloc = config.indir + "/" + self.prod_code[0]
+        if not os.path.isdir(self.fileloc):
+            os.mkdir(self.fileloc)
 
         # Create GDO download objects so we can see what the filenames are
         
-        # create list of years to download data for
+        ## create list of years to download data for
         years = np.arange(int(self.args.start_date[:4]),int(self.args.end_date[:4])+1)
 
         dl_objs = []
         for y in years:
             for pc in self.prod_code:
-                obj = gdo.GDODownload(y,pc,logger=self.logger)
+                obj = gdo.GDODownload(y,pc,self.fileloc,logger=self.logger)
                 if obj.success:
                     dl_objs.append(obj)
 
@@ -441,20 +439,23 @@ class GDODroughtIndex(DroughtIndex):
 
     def download(self):
 
+        self.logger.info("Downloading {} files to {}".format(len(self.files),self.fileloc))
         filelist = []
-        if not os.path.isdir(self.fileloc):
-            os.mkdir(self.fileloc)
-
         for f in self.files:
-            filelist = filelist + f.download(self.fileloc)
+            if "https" in f.files_to_download:
+                filelist = filelist + f.download(self.fileloc)
+            else:
+                filelist = filelist + f.files_to_download
 
         self.filepaths = [self.fileloc + "/" + f for f in filelist]
-        return self.filepaths
+                
+        if len(self.filepaths)==0:
+            self.logger.error('No files available to be processed')
+            return None
+        else:
+            return self.filepaths
             
     def load_and_trim(self):
-
-        if len(self.filepaths)==0:
-            self.logger.error('No files downloaded')
 
         def open_point(fname):
             return xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['4326']) 
@@ -496,7 +497,11 @@ class GDODroughtIndex(DroughtIndex):
         ds = xr.merge(open_func[self.sstype.value](fname) for fname in self.filepaths)
 
         # Trim to required dates
-        ds = ds.sel(time=slice(pd.Timestamp(self.args.start_date),pd.Timestamp(self.args.end_date)))
+        try:
+            ds = ds.sel(time=slice(pd.Timestamp(self.args.start_date),pd.Timestamp(self.args.end_date)))
+        except:
+            self.logger.error("Couldn't slice data between {} and {}".format(self.args.start_date,self.args.end_date))
+            return None
 
         return ds
   
@@ -582,8 +587,8 @@ class SPI_ECMWF(DroughtIndex):
 
         # Convert to monthly sums and extract max of the available cells
         if self.config.aws or self.config.era_daily: # or any other setting which would result in more than monthy data
-            da = da.resample(time='1MS').sum()#.max(['latitude', 'longitude']).load()
-
+            da = da.resample(time='1MS').sum()
+            
         if self.sstype.value==SSType.POINT.value:
             da = da.max(['latitude', 'longitude']).load()
 
@@ -648,6 +653,10 @@ class SPI_GDO(GDODroughtIndex):
 
     def process(self):
         ds = super().load_and_trim()
+        
+        if ds is None:
+            self.logger.error("No data available")
+            return None
 
         # Fill any data gaps
         time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
@@ -808,7 +817,7 @@ class SMA_ECMWF(DroughtIndex):
     
     def download(self):
         """
-        Download required data from ERA5 portal using the imported ERA5 request module.
+        Download requried data from ERA5 portal using the imported ERA5 request module.
         Download long term monthly data for the long term mean, and separately hourly data for short term period.
         """
         def exists_or_download(erad: erq.ERA5Download):
@@ -888,14 +897,8 @@ class SMA_ECMWF(DroughtIndex):
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
-        # Remove expver duplicates if present
-        if 'expver' in swv_dekads.keys():
-            swv_dekads = swv_dekads.sel(expver=1,drop=True)
-
-        # Create final data frame and
         self.data_ds = swv_dekads
         self.data_df = swv_dekads.to_dataframe().reset_index()
-        self.logger.info("data_df: {}".format(self.data_df))
 
         # Output to JSON
         self.generate_output()
@@ -910,7 +913,7 @@ class SMA_GDO(GDODroughtIndex):
         super().__init__(config,args,['smant']) #['smant','smand']
 
     def process(self):
-        print('Loading and trimmning data...')
+        print('Loading and trimming data...')
         ds = super().load_and_trim()
 
         # TODO reimplement if it is important to have data beyond 2022
@@ -1049,29 +1052,14 @@ class CDI(DroughtIndex):
         da_fpr = self.fpr.data_ds[self.args.fpr_var]
 
         # Interpolate SMA and FPR to same grid as CDI
-        self.logger.info("Type {} singleval {}".format(self.sstype.value,self.args.singleval))
-        if (self.sstype.value is SSType.POINT.value and not self.args.singleval):
+        if not (self.sstype.value is SSType.POINT.value):
             da_sma = utils.regrid_like(da_sma,da_spi)
             da_fpr = utils.regrid_like(da_fpr,da_spi)
 
-        # Reduce SMA and FPR to point series for viewer
-        if self.args.singleval:
-            da_sma = da_sma.mean(dim='longitude').mean(dim='latitude')
-            da_fpr = da_fpr.mean(dim='longitude').mean(dim='latitude')
+        da_sma = da_sma.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
+        da_fpr = da_fpr.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
 
-            # Setup data frame for lat & lon data access
-            df_spi = self.spi.data_df
-            df_spi = df_spi[~df_spi.index.duplicated()]
-
-            da_sma = da_sma.reindex({'latitude':df_spi.latitude,'longitude':df_spi.longitude},method='nearest')
-            da_fpr = da_fpr.reindex({'latitude':df_spi.latitude,'longitude':df_spi.longitude},method='nearest')
-
-        else:
-            da_sma = da_sma.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
-            da_fpr = da_fpr.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
-
-
-        # Drop values outside requested area if polygon
+        # drop values outside requested area if polygon
         if self.sstype.value is SSType.POLYGON.value:
             da_spi = da_spi.where(da_spi != OUTSIDE_AREA_SELECTION)
             da_sma = da_sma.where(da_sma != OUTSIDE_AREA_SELECTION)
@@ -1081,10 +1069,6 @@ class CDI(DroughtIndex):
         spi_reindexed = da_spi.reindex({'time':self.time_dekads},method='ffill')
         sma_reindexed = da_sma.reindex({'time':self.time_dekads})
         fpr_reindexed = da_fpr.reindex({'time':self.time_dekads})
-
-        #self.logger.info("SPI reindexed: {}".format(spi_reindexed))
-        #self.logger.info("SMA reindexed: {}".format(sma_reindexed))
-        #self.logger.info("FPR reindexed: {}".format(fpr_reindexed))
 
         self.ds_reindexed = xr.Dataset(data_vars = {self.args.spi_var: spi_reindexed,
                                                     self.args.sma_var: sma_reindexed,
@@ -1125,6 +1109,5 @@ class CDI(DroughtIndex):
         self.generate_output()
 
         self.logger.info("Completed processing of ERA5 CDI data.")
-        #self.logger.info(self.data_df)
         return self.data_df
     
