@@ -3,7 +3,6 @@ import os
 import numpy as np
 import pandas as pd
 import xarray as xr
-import glob
 import datetime
 from dateutil.relativedelta import relativedelta
 
@@ -695,11 +694,11 @@ class SPI_NCG(DroughtIndex):
             quit()
 
         # define a filename to output to
-        self.filename = config.indir + "/noaa_prcp_{sd}-{ed}_{la}_{lo}.csv".format(
+        self.filename = os.path.join(config.indir, "/noaa_prcp_{sd}-{ed}_{la}_{lo}.csv".format(
             sd = config.baseline_start,
             ed = config.baseline_end,
             la = args.latitude,
-            lo = args.longitude)
+            lo = args.longitude))
     
 
     def download(self):
