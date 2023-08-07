@@ -8,6 +8,7 @@ from climate_drought import utils, config
 # Feature download
 from requests import Request
 import geopandas as gpd
+import geojson
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -16,11 +17,9 @@ logging.basicConfig(level=logging.INFO)
 BOX_SIZE = 0.1
 
 # SAFE server
-URL = "https://disasterpilot-dean.fmecloud.com/fmedatastreaming/OGCAPI/collections.fmw/collection"
+URL = "https://disasterpilot-dean.fmecloud.com/fmedatastreaming/OGCAPI/"
 
-PRECIP_VARIABLES = ['total_precipitation']
-SOILWATER_VARIABLES = ["volumetric_soil_water_layer_1", "volumetric_soil_water_layer_2",
-                       "volumetric_soil_water_layer_3", "volumetric_soil_water_layer_4"]
+FEATURE_VARIABLES = ['climateECV_querier_MB_precip.fmw','climateECV_querier_MB_temp.fmw']
 
 class FeatureRequest():
     """
@@ -66,24 +65,6 @@ class FeatureDownload():
             date_list.append(date(yyyy, mm, dd))
         self.dates = date_list
 
-    @property
-    def download_file_path(self):
-        """
-        Returns the path to the file that will be downloaded
-        :return: path to the file that will be downloaded
-        """
-
-        latstr = str("{0:.2f}".format(self.req.minlat)) + '-' + str("{0:.2f}".format(self.req.maxlat))
-        lonstr = str("{0:.2f}".format(self.req.minlon)) + '-' + str("{0:.2f}".format(self.req.maxlon))
-
-        file_str = "{sd}-{ed}_{la}_{lo}_{fq}".format(sd=self.req.start_date,
-                                                     ed=self.req.end_date,
-                                                     la=latstr,
-                                                     lo=lonstr,
-                                                     fq=self.req.frequency.value)
-    
-        return os.path.join(self.req.working_dir, self.req.fname_out + "_{d}.nc".format(d=file_str))
-
     def download(self) -> str:
         """
         This function handles downloading from a Feature Server.
@@ -103,14 +84,14 @@ class FeatureDownload():
         self.download_feature_data(
             variables=self.req.variables,
             dates=self.dates,area=area_box,
-            out_file=self.download_file_path)
+            out_file=self.req.fname_out)
 
-        if os.path.isfile(self.download_file_path):
-            self.logger.info("Feature data was downloaded to '{}'.".format(self.download_file_path))
+        if os.path.isfile(self.req.fname_out):
+            self.logger.info("Feature data was downloaded to '{}'.".format(self.req.fname_out))
         else:
-            raise FileNotFoundError("Feature download file '{}' was missing.".format(self.download_file_path))
+            raise FileNotFoundError("Feature download file '{}' was missing.".format(self.req.fname_out))
 
-        return self.download_file_path
+        return self.req.fname_out
 
     def download_feature_data(self, variables: List[str], dates: List[date], area: List[float],out_file: str) -> bool:
 
@@ -128,13 +109,22 @@ class FeatureDownload():
 
             self.logger.info("Downloading Feature data for {} {} for {}".format(dates[0], dates[-1], area))
 
-            features = "?&service=WFS&request=GetFeature&typename={}".format(variables[0])
-            full_url = os.path.join(URL,features)
-            q = Request('GET', full_url).prepare().url
-            df = gpd.read_file(q, format='GeoJSON')
-            df.crs = 'EPSG:4326'
+            #bbox = -99.0 49.0 -96.0 50.0
+            features = "{}?bbox = {} {} {} {},StartYear={},EndYear={},MinPeriodVal=25,MaxPeriodVal=30".format(FEATURE_VARIABLES[0],area[0],area[1],area[2],area[3],dates[0],dates[-1])
+            full_url = URL+features
+            self.logger.info("SME request: {}".format(full_url))
+            try:
+                q = Request('GET', full_url).prepare().url
+                df = gpd.read_file(q, format='GeoJSON')
+                #df.crs = 'EPSG:4326'
+                self.logger.info("SAM Extracted data: ",df)
 
-            result = xxxx
+                with open(out_file, "w", encoding='utf-8') as outfile:
+                    geojson.dump(df, outfile, indent=4)
+
+                result = 1
+            except:
+                result = 0
 
             if result == 0:
                 raise RuntimeError("Download process returned unexpected non-zero exit code '{}'.".format(result))

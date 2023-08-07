@@ -19,20 +19,23 @@ class LoadSAFE():
     """
     Loads the manually provided SAFE file
     """
-    def __init__(self, logger: logging.Logger):
+    def __init__(self, logger: logging.Logger, infile: False):
         self.logger = logger
+        self.infile = infile
 
     # Load Canadian RCP data from SAFE software exported GeoJSON
     def load_safe(self, df_spi, lat_val = 50.0, lon_val = -97.5):
-        infile = os.path.join("input","climateScenarios_rpc4.5_precipTotalMonPoints_MB_2023_2024.geojson")
-        if not os.path.exists(infile):
-            self.logging.warning("Could not load SAFE Software file: {}".format(infile))
+
+        if not self.infile:
+            self.infile = os.path.join("input","climateScenarios_rpc4.5_precipTotalMonPoints_MB_2023_2024.geojson")
+        if not os.path.exists(self.infile):
+            self.logging.warning("Could not load SAFE Software file: {}".format(self.infile))
             # Return the original SPI data
             df = df_spi
         else:
 
             # Load data
-            with open(infile) as f:
+            with open(self.infile) as f:
                 data = geojson.load(f)
 
             # Normalize JSON data into a flat table
