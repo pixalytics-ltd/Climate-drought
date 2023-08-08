@@ -17,7 +17,7 @@ from covjson_pydantic.coverage import Coverage
 from covjson_pydantic.parameter import Parameter, ParameterGroup
 
 # Drought indices calculator
-from climate_drought import indices, config, utils, era5_request as erq, gdo_download as gdo, noaa_download as nd, feature_request as fr, load_local_file as local
+from climate_drought import indices, config, utils, era5_request as erq, gdo_download as gdo, noaa_download as nd, feature_request as fr, load_feature_file as load
 
 # pygeometa for OGC API record creation
 import yaml
@@ -195,7 +195,7 @@ class DroughtIndex(ABC):
         # Reindex and drop duplicates
         df = self.data_df.set_index(['time','latitude','longitude'])
         df = df.drop_duplicates()
-        print("Data frame: ", self.data_df)
+        #print("Data frame: ", self.data_df)
 
         # Drop if whole row is NANs
         df = df.dropna(how='all')
@@ -885,7 +885,7 @@ class FEATURE_SAFE(DroughtIndex):
         ds = ds.sel(time=slice(pd.Timestamp(self.config.baseline_start), pd.Timestamp(clip_date)))
 
         # Load SAFE data
-        safe = local.LoadSAFE(logger=logging,infile=self.filename)
+        safe = load.LoadSAFE(logger=logging,infile=self.filename)
         df_filtered = safe.load_safe(ds.to_dataframe().reset_index(), lat_val=self.args.latitude[0], lon_val=self.args.longitude[0])
 
         # Generate output file

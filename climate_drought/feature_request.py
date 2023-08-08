@@ -111,7 +111,7 @@ class FeatureDownload():
 
             #bbox = -99.0 49.0 -96.0 50.0
             features = "{}?StartYear={}&EndYear={}&bbox={},{},{},{}".format(FEATURE_VARIABLES[0],dates[0].year,dates[-1].year,area[1],area[2],area[3],area[0])
-            
+
             full_url = URL+features
             self.logger.info("SME request: {}".format(full_url))
             try:

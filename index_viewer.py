@@ -13,7 +13,7 @@ from typing import List
 
 # Links from Climate-drought repository
 from climate_drought import config, drought_indices as dri
-from climate_drought import load_local_file as local
+from climate_drought import load_feature_file as local
 
 # Logging
 logging.basicConfig(level=logging.INFO)
