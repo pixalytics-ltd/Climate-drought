@@ -192,8 +192,10 @@ class DroughtIndex(ABC):
         # Build GeoJSON object
         self.feature_collection = {"type": "FeatureCollection", "features": []}
 
-        #print("Data frame: ", self.data_df)
+        # Reindex and drop duplicates
         df = self.data_df.set_index(['time','latitude','longitude'])
+        df = df.drop_duplicates()
+        print("Data frame: ", self.data_df)
 
         # Drop if whole row is NANs
         df = df.dropna(how='all')
@@ -378,7 +380,7 @@ class DroughtIndex(ABC):
 
     def generate_output(self) -> None:
         # Save to chosen output format
-        print('Generating output...')
+        self.logger.info('Generating output...')
         if not os.path.isfile(self.output_file_path):
 
             oformat = self.args.oformat.lower()
@@ -564,7 +566,7 @@ class SPI_ECMWF(DroughtIndex):
         if 'expver' in ds.keys():
             ds = ds.sel(expver=1,drop=True)
 
-        self.logger.debug("Xarray:")
+        self.logger.debug("Precip xarray:")
         self.logger.debug(ds)
 
         # Mask polygon if needed
@@ -601,8 +603,11 @@ class SPI_ECMWF(DroughtIndex):
             num_vals = len(da)
             lat = np.repeat(self.args.latitude, num_vals)
             lon = np.repeat(self.args.longitude, num_vals)
-            ds = xr.Dataset(data_vars={'tp': da, 'spi': ("time", spi_vals),'latitude': ("time", lat), 'longitude': ("time", lon)})
-            #print("ds: ",ds)
+            ds = xr.Dataset(data_vars={'tp': da, 'spi': ("time", spi_vals)})
+            ds = ds.assign_coords({"longitude": lon})\
+                .assign_coords({"latitude": lat})
+
+            #print("ECMWF ds: ",ds)
 
         else:
             spi_vals = xr.apply_ufunc(spi.calc_spi,da,input_core_dims=[['time']],output_core_dims=[['time']],vectorize=True)
@@ -768,7 +773,7 @@ class SPI_NCG(DroughtIndex):
         df_filtered = utils.fill_gaps(time_months,df_filtered)
 
         # store processed data on object
-        self.data = df_filtered
+        self.data_df = df_filtered
 
         self.generate_output()
 
@@ -864,17 +869,102 @@ class FEATURE_SAFE(DroughtIndex):
         self.download_obj_baseline = erq.ERA5Download(request_baseline, self.logger)
 
         ## call download
-        downloaded_file = self.download_obj_baseline.download()
-        self.logger.info("Downloading for ECMWF: '{}'".format(downloaded_file))
+        self.download_obj_baseline.download()
+        self.logger.info("Downloading for ECMWF: '{}'".format(self.download_obj_baseline.download_file_path))
 
         # Calculate SPI
-        spi_ecmwf = self.download_obj_baseline.convert_precip_to_spi(self)
+        ds = self.convert_precip_to_spi()
+
+        # Trim to required dates so doesn't overlap with SAFE data
+        if int(self.args.start_date[0:6]) < 201912:
+            clip_date = '20191201'
+        else:
+            end_date = datetime.date(int(self.args.start_date[0:4]),int(self.args.start_date[4:6]),int(self.args.start_date[6:8])) - datetime.timedelta(days=31)
+            clip_date = end_date.strftime('%Y%m%d')
+        self.logger.info("Clipping ECMWF data from {} to {}".format(self.config.baseline_start,clip_date))
+        ds = ds.sel(time=slice(pd.Timestamp(self.config.baseline_start), pd.Timestamp(clip_date)))
 
         # Load SAFE data
         safe = local.LoadSAFE(logger=logging,infile=self.filename)
-        df_merged = safe.load_safe(spi_ecmwf, lat_val=self.latitude[0], lon_val=self.longitude[0])
+        df_filtered = safe.load_safe(ds.to_dataframe().reset_index(), lat_val=self.args.latitude[0], lon_val=self.args.longitude[0])
 
-        return df_merged
+        # Generate output file
+        self.data_df = df_filtered
+        self.generate_output()
+
+        self.logger.info("Completed processing of SAFE FEATURE data.")
+
+        return df_filtered
+
+    def convert_precip_to_spi(self) -> None:
+        """
+        Calculates SPI precipitation drought index
+        :param input_file_path: path to file containing precipitation
+        :param output_file_path: path to file to be written containing SPI
+        :return: nothing
+        """
+
+        # Extract data from NetCDF file
+        ds = xr.open_dataset(self.download_obj_baseline.download_file_path)
+
+        if 'expver' in ds.keys():
+            ds = ds.sel(expver=1, drop=True)
+
+        #self.logger.debug("Xarray:")
+        #self.logger.debug(ds)
+
+        # Mask polygon if needed
+        if self.sstype.value == SSType.POLYGON.value:
+            ds = utils.mask_ds_poly(
+                ds=ds,
+                lats=self.args.latitude,
+                lons=self.args.longitude,
+                grid_x=0.1,
+                grid_y=0.1,
+                ds_lat_name='latitude',
+                ds_lon_name='longitude',
+                other=OUTSIDE_AREA_SELECTION,
+                mask_bbox=False
+            )
+
+        # Get total precipitation as data array
+        da = ds.tp
+
+        # Set up SPI calculation  algorithm
+        spi = indices.INDICES()
+
+        # Convert to monthly sums and extract max of the available cells
+        if self.config.aws or self.config.era_daily:  # or any other setting which would result in more than monthy data
+            da = da.resample(time='1MS').sum()
+
+        if self.sstype.value == SSType.POINT.value:
+            da = da.max(['latitude', 'longitude']).load()
+
+            # Calculate SPI from precip
+            spi_vals = spi.calc_spi(da)
+
+            # Add back latitude and longitude as store ds
+            num_vals = len(da)
+            lat = np.repeat(self.args.latitude, num_vals)
+            lon = np.repeat(self.args.longitude, num_vals)
+            ds = xr.Dataset(
+                data_vars={'tp': da, 'spi': ("time", spi_vals), 'latitude': ("time", lat), 'longitude': ("time", lon)})
+            # print("ds: ",ds)
+
+        else:
+            spi_vals = xr.apply_ufunc(spi.calc_spi, da, input_core_dims=[['time']], output_core_dims=[['time']],
+                                      vectorize=True)
+
+            # Store spi
+            ds = xr.Dataset(data_vars={'tp': da, 'spi': spi_vals})
+
+        self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(da.values), np.nanmin(da.values),
+                                                                                 np.nanmax(da.values)))
+        self.logger.info(
+            "SPI, {} values: {:.3f} {:.3f}".format(len(spi_vals), np.nanmin(spi_vals), np.nanmax(spi_vals)))
+
+        return ds
+
 
 class SMA_ECMWF(DroughtIndex):
     """
@@ -1017,7 +1107,7 @@ class SMA_GDO(GDODroughtIndex):
         super().__init__(config,args,['smant']) #['smant','smand']
 
     def process(self):
-        print('Loading and trimming data...')
+        self.logger.info('Loading and trimming data...')
         ds = super().load_and_trim()
 
         # TODO reimplement if it is important to have data beyond 2022
@@ -1032,7 +1122,7 @@ class SMA_GDO(GDODroughtIndex):
         #     da = ds.smant
 
         # Fill any data gaps
-        print('Filling gaps  in data...')  
+        self.logger.info('Filling gaps  in data...')
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
         ds = ds.reindex({'time': time_dekads})
 
@@ -1042,11 +1132,11 @@ class SMA_GDO(GDODroughtIndex):
         self.data_ds = ds
         
         # Convert to df for output
-        print('Converting to dataframe...')
+        self.logger.info('Converting to dataframe...')
         df = ds.to_dataframe().reset_index()
 
         # Drop locations outside of selected area
-        print('Reducing to requested area...')
+        self.logger.info('Reducing to requested area...')
         df = df[df.smant!=OUTSIDE_AREA_SELECTION]
         self.data_df = df
 
@@ -1160,8 +1250,21 @@ class CDI(DroughtIndex):
             da_sma = utils.regrid_like(da_sma,da_spi)
             da_fpr = utils.regrid_like(da_fpr,da_spi)
 
-        da_sma = da_sma.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
-        da_fpr = da_fpr.reindex({'latitude':da_spi.latitude,'longitude':da_spi.longitude},method='nearest')
+            da_sma = da_sma.reindex({'latitude': da_spi.latitude, 'longitude': da_spi.longitude},
+                                    method='nearest')
+            da_fpr = da_fpr.reindex({'latitude': da_spi.latitude, 'longitude': da_spi.longitude}, method='nearest')
+
+        else: # For point data
+
+            da_sma = da_sma.reindex({'latitude': self.spi.data_ds.latitude, 'longitude': self.spi.data_ds.longitude}, method='nearest')
+            da_fpr = da_fpr.reindex({'latitude': self.spi.data_ds.latitude, 'longitude': self.spi.data_ds.longitude}, method='nearest')
+
+            # Remove duplicates
+            da_sma = da_sma.drop_duplicates(dim=...)
+            da_fpr = da_fpr.drop_duplicates(dim=...)
+
+        #self.logger.info("SPI: ",da_spi)
+        #self.logger.info("SMA: ",da_sma)
 
         # drop values outside requested area if polygon
         if self.sstype.value is SSType.POLYGON.value:

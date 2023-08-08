@@ -110,14 +110,15 @@ class FeatureDownload():
             self.logger.info("Downloading Feature data for {} {} for {}".format(dates[0], dates[-1], area))
 
             #bbox = -99.0 49.0 -96.0 50.0
-            features = "{}?bbox = {} {} {} {},StartYear={},EndYear={},MinPeriodVal=25,MaxPeriodVal=30".format(FEATURE_VARIABLES[0],area[0],area[1],area[2],area[3],dates[0],dates[-1])
+            features = "{}?StartYear={}&EndYear={}&bbox={},{},{},{}".format(FEATURE_VARIABLES[0],dates[0].year,dates[-1].year,area[1],area[2],area[3],area[0])
+            
             full_url = URL+features
             self.logger.info("SME request: {}".format(full_url))
             try:
                 q = Request('GET', full_url).prepare().url
                 df = gpd.read_file(q, format='GeoJSON')
                 #df.crs = 'EPSG:4326'
-                self.logger.info("SAM Extracted data: ",df)
+                self.logger.info("SAM Extracted data: {}".format(df))
 
                 with open(out_file, "w", encoding='utf-8') as outfile:
                     geojson.dump(df, outfile, indent=4)
