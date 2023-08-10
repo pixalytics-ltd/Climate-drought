@@ -10,6 +10,9 @@ from requests import Request
 import geopandas as gpd
 import geojson
 
+TINTERVAL = [ "2020-01-16T14:51:12Z", "2031-01-01T19:15:35Z" ]
+BBOX=[ -137.1584, 25.8242, -46.2405, 59.1733 ]
+
 # Logging
 logging.basicConfig(level=logging.INFO)
 
@@ -75,16 +78,29 @@ class FeatureDownload():
         self.logger.info("Initiating download of Feature data.")
         self.logger.info("Variables to be downloaded: {}.".format(", ".join(self.req.variables)))
 
-        area_box = [round(self.req.maxlat,2),
-                    round(self.req.minlon,2),
+        area_box = [round(self.req.minlon,2),
                     round(self.req.minlat,2),
-                    round(self.req.maxlon,2)
+                    round(self.req.maxlon,2),
+                    round(self.req.maxlat,2)
         ]
 
-        self.download_feature_data(
-            variables=self.req.variables,
-            dates=self.dates,area=area_box,
-            out_file=self.req.fname_out)
+        # Check requested area overlaps with server's bounding box
+        overlap,union,iou = utils.calculate_iou(area_box, BBOX)
+        # Check dates are within dataset time interval
+
+        start_int = date.fromisoformat(TINTERVAL[0].split("T")[0])
+        end_int = date.fromisoformat(TINTERVAL[1].split("T")[0])
+        sdate = date(int(self.req.start_date[0:4]),int(self.req.start_date[4:6]),int(self.req.start_date[6:8]))
+        edate = date(int(self.req.end_date[0:4]), int(self.req.end_date[4:6]), int(self.req.end_date[6:8]))
+        print("{} within {} {}".format(self.req.start_date,TINTERVAL[0],TINTERVAL[1]))
+
+        if iou > 0 and (sdate <= end_int) and (edate >= start_int):
+            self.download_feature_data(
+                variables=self.req.variables,
+                dates=self.dates,area=area_box,
+                out_file=self.req.fname_out)
+        else:
+            raise Exception("The requested bounding box {} is not covered by the dataset {} or the start date {} is not within the time interval {} {}".format(area_box, BBOX, self.req.start_date,TINTERVAL[0],TINTERVAL[1]))
 
         if os.path.isfile(self.req.fname_out):
             self.logger.info("Feature data was downloaded to '{}'.".format(self.req.fname_out))
@@ -110,7 +126,7 @@ class FeatureDownload():
             self.logger.info("Downloading Feature data for {} {} for {}".format(dates[0], dates[-1], area))
 
             #bbox = -99.0 49.0 -96.0 50.0
-            features = "{}?StartYear={}&EndYear={}&bbox={},{},{},{}".format(FEATURE_VARIABLES[0],dates[0].year,dates[-1].year,area[1],area[2],area[3],area[0])
+            features = "{}?StartYear={}&EndYear={}&bbox={},{},{},{}&limit=10000".format(FEATURE_VARIABLES[0],dates[0].year,dates[-1].year,area[0],area[1],area[2],area[3])
 
             full_url = URL+features
             self.logger.info("SME request: {}".format(full_url))
