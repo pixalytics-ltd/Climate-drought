@@ -100,7 +100,7 @@ class FeatureDownload():
                 dates=self.dates,area=area_box,
                 out_file=self.req.fname_out)
         else:
-            raise Exception("The requested bounding box {} is not covered by the dataset {} or the start date {} is not within the time interval {} {}".format(area_box, BBOX, self.req.start_date,TINTERVAL[0],TINTERVAL[1]))
+            raise Exception("The requested bounding box {} is not covered by the dataset {} or the dates {} {} are not sufficiently covered bt the time interval {} {}".format(area_box, BBOX, self.req.start_date, self.req.end_date,TINTERVAL[0],TINTERVAL[1]))
 
         if os.path.isfile(self.req.fname_out):
             self.logger.info("Feature data was downloaded to '{}'.".format(self.req.fname_out))
