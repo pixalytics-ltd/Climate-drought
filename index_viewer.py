@@ -117,7 +117,7 @@ def load_indices(cdi: dri.CDI):
 
     # Load precip anomaly data from SAFE software
     if aa.latitude == 50.06:
-        safe = local.LoadSAFE(logger=logging)
+        safe = local.LoadSAFE(logger=logging, infile = False)
         spi_ecmwf = safe.load_safe(spi_ecmwf, lat_val=aa.latitude, lon_val=aa.longitude)
         aa.end_date = '20241231'
 
@@ -239,8 +239,7 @@ with st.sidebar:
 
         # Load precip anomaly data from SAFE software
         if aa.latitude == 50.06:
-
-            safe = local.LoadSAFE(logger=logging)
+            safe = local.LoadSAFE(logger=logging, infile = False)
             df_spi_ecmwf = safe.load_safe(df_spi_ecmwf, lat_val=aa.latitude, lon_val=aa.longitude)
             aa.end_date = '20241231'
 
