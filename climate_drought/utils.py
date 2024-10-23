@@ -5,7 +5,20 @@ import xarray as xr
 import numpy as np
 import matplotlib.pyplot as plt
 
-from shapely import Polygon
+from shapely import Polygon, box
+
+
+# Calculate overlap between two bounding boxes
+def calculate_iou(bbox_1, bbox_2):
+
+    box_1 = box(bbox_1[0],bbox_1[1],bbox_1[2],bbox_1[3])
+    box_2 = box(bbox_2[0],bbox_2[1],bbox_2[2],bbox_2[3])
+    overlap = box_1.intersection(box_2).area
+    union = box_1.union(box_2).area
+    iou = overlap / union
+    #print("Bounding box, overlap {} union {} iou {}".format(box_1.intersection(box_2).area, box_1.union(box_2).area, iou))
+
+    return overlap,union,iou
 
 
 def daterange(sdate, edate, rtv):

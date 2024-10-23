@@ -16,7 +16,8 @@ INDEX_MAP = {
     'SMA_ECMWF': dri.SMA_ECMWF,
     'SMA_GDO': dri.SMA_GDO,
     'fAPAR': dri.FPAR_GDO,
-    'CDI': dri.CDI
+    'CDI': dri.CDI,
+    'FEATURE_SAFE': dri.FEATURE_SAFE
 }
 
 class DROUGHT:
@@ -64,6 +65,8 @@ class DROUGHT:
             self.product = "SPI_ECMWF"
         elif self.product == "SMA":
             self.product = "SMA_ECMWF"
+        elif self.product == "SAFE":
+            self.product = "FEATURE_SAFE"
 
         self.logger.debug("Computing {idx} index for {sd} to {ed}.".format(idx=self.product, sd=self.config.baseline_start, ed=self.config.baseline_end))
 

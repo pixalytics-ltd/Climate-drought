@@ -18,11 +18,13 @@ dependencies:
     - dask[distributed]
     - fsspec
     - geojson
+    - geopandas
     - h5py
     - jupyter-server-proxy
     - kerchunk
     - netcdf4
     - numba==0.56.4
+    - opencv-python
     - pygeometa
     - python-snappy
     - s3fs
