@@ -337,4 +337,3 @@ with col2:
             file_name=fn,
             mime="image/png"
         )
-
