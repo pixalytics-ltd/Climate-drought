@@ -16,7 +16,8 @@ INDEX_MAP = {
     'SMA_ECMWF': dri.SMA_ECMWF,
     'SMA_GDO': dri.SMA_GDO,
     'fAPAR': dri.FPAR_GDO,
-    'CDI': dri.CDI
+    'CDI': dri.CDI,
+    'FEATURE_SAFE': dri.FEATURE_SAFE
 }
 
 class DROUGHT:
@@ -30,7 +31,12 @@ class DROUGHT:
 
     def __init__(self,args):
 
-        # Transfer args
+        # Convert latitude and longitude strings to lists
+        args.latitude = [float(item) for item in args.latitude.replace('[','').replace(']','').split(',')]
+        args.longitude = [float(item) for item in args.longitude.replace('[','').replace(']','').split(',')]
+        #print("Latitude: ",args.latitude)
+
+         # Transfer args
         self.product = args.product
         self.config = config.Config(args.outdir,args.indir,args.verbose,aws=args.aws,era_daily=args.era_daily)
 
@@ -59,6 +65,8 @@ class DROUGHT:
             self.product = "SPI_ECMWF"
         elif self.product == "SMA":
             self.product = "SMA_ECMWF"
+        elif self.product == "SAFE":
+            self.product = "FEATURE_SAFE"
 
         self.logger.debug("Computing {idx} index for {sd} to {ed}.".format(idx=self.product, sd=self.config.baseline_start, ed=self.config.baseline_end))
 
@@ -109,8 +117,8 @@ def main():
     )
     parser.add_argument("-A", "--accum", action="store_true", default=False, help="Accumulation - not set from command line")
     parser.add_argument("-AWS", "--aws", action="store_true", default=False, help="Download from AWS rather than CDS for SPI")
-    parser.add_argument("-y", "--latitude", type=float, dest="latitude")
-    parser.add_argument("-x", "--longitude", type=float, dest="longitude")
+    parser.add_argument("-y", "--latitude", type=str, dest="latitude")
+    parser.add_argument("-x", "--longitude", type=str, dest="longitude")
     parser.add_argument("-p", "--product", type=str, dest="product", default='none')
     parser.add_argument("-of", "--oformat", type=str, dest="oformat", default='GeoJSON')
     parser.add_argument("-t", "--type", type=str, dest="type", default='none')
