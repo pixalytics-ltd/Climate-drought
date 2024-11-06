@@ -482,16 +482,18 @@ class GDODroughtIndex(DroughtIndex):
         super().__init__(config,args)
         self.prod_code = [prod_code] if isinstance(prod_code,str) else prod_code
         self.fileloc = config.indir + "/" + self.prod_code[0]
+        if not os.path.isdir(self.fileloc):
+            os.mkdir(self.fileloc)
 
         # Create GDO download objects so we can see what the filenames are
         
-        # create list of years to download data for
+        ## create list of years to download data for
         years = np.arange(int(self.args.start_date[:4]),int(self.args.end_date[:4])+1)
 
         dl_objs = []
         for y in years:
             for pc in self.prod_code:
-                obj = gdo.GDODownload(y,pc,logger=self.logger)
+                obj = gdo.GDODownload(y,pc,self.fileloc,logger=self.logger)
                 if obj.success:
                     dl_objs.append(obj)
 
@@ -500,28 +502,72 @@ class GDODroughtIndex(DroughtIndex):
 
     def download(self):
 
+        self.logger.info("Downloading {} files to {}".format(len(self.files),self.fileloc))
         filelist = []
-        if not os.path.isdir(self.fileloc):
-            os.mkdir(self.fileloc)
-
         for f in self.files:
-            filelist = filelist + f.download(self.fileloc)
+            if "https" in f.files_to_download:
+                filelist = filelist + f.download(self.fileloc)
+            else:
+                filelist = filelist + f.files_to_download
 
         self.filepaths = [self.fileloc + "/" + f for f in filelist]
-            
+        if len(self.filepaths)==0:
+            self.logger.error('No files available to be processed')
+            return None
+        else:
+            return self.filepaths
+
     def load_and_trim(self):
 
-        if len(self.filepaths)==0:
-            self.logger.error('No files downloaded')
+        def open_point(fname):
+            return xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['4326']) 
 
-        # Open all dses and merge
-        get_ds = lambda fname: xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['lat','lon','4326']) 
-        df = xr.merge(get_ds(fname) for fname in self.filepaths).to_dataframe()
+        def open_bbox(fname):
+            ds = xr.open_dataset(fname).drop_vars(['4326'])
+            try:
+                mask = utils.mask_ds_bbox(ds,
+                    np.min(self.args.longitude),
+                    np.max(self.args.longitude),
+                    np.min(self.args.latitude),
+                    np.max(self.args.latitude))
+            except: # Expand bounds
+                mask = utils.mask_ds_bbox(ds,
+                    np.min(self.args.longitude)-(BOX_SIZE*3),
+                    np.max(self.args.longitude)+(BOX_SIZE*3),
+                    np.min(self.args.latitude)-(BOX_SIZE*3),
+                    np.max(self.args.latitude)+(BOX_SIZE*3))
+                self.logger.info("Needed to expand bounding box: {} ".format(mask.dims))
+            return mask
+
+        def open_poly(fname):
+            ds = xr.open_dataset(fname).drop_vars(['4326']) 
+            return utils.mask_ds_poly(ds,
+                                        self.args.latitude,
+                                        self.args.longitude,
+                                        self.grid_size,
+                                        self.grid_size,
+                                        other = OUTSIDE_AREA_SELECTION
+                                        )
+        # Methods to open data
+        open_func = {
+            SSType.POINT.value: open_point,
+            SSType.BBOX.value: open_bbox,
+            SSType.POLYGON.value: open_poly
+        }
+
+        # Open all ds data frames and merge
+        ds = xr.merge(open_func[self.sstype.value](fname) for fname in self.filepaths)
 
         # Trim to required dates
-        df = df.loc[(df.index >= self.args.start_date) & (df.index <= self.args.end_date)] 
-        return df
-  
+        try:
+            ds = ds.sel(time=slice(pd.Timestamp(self.args.start_date),pd.Timestamp(self.args.end_date)))
+        except:
+            self.logger.error("Couldn't slice data between {} and {}".format(self.args.start_date,self.args.end_date))
+            return None
+
+        return ds
+
+
 class SPI_ECMWF(DroughtIndex):
 
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
@@ -640,6 +686,9 @@ class SPI_GDO(GDODroughtIndex):
 
     def process(self):
         df = super().load_and_trim()
+        if df is None:
+            self.logger.error("No data available")
+            return None
 
         # Fill any data gaps
         time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
@@ -869,6 +918,18 @@ class SMA_GDO(GDODroughtIndex):
         if 'smand' in list(df.columns):
             df.smant.fillna(df.smand, inplace=True)
             del df['smand']
+
+        # TODO reimplement if it is important to have data beyond 2022
+        # # smand is used instead of smant for November 2022 (2nd dekad) onwards
+        # # split data, rename smand -> smant, and recombine
+        # if 'smand' in list(ds.variables):
+        #     da_smant = utils.crop_ds(ds.smant,self.args.start_date,'20221110')
+        #     da_smand = utils.crop_ds(ds.drop_vars('smant').rename({'smand':'smant'}).smant,'20221111',self.args.end_date)
+        #     da = xr.concat([da_smant,da_smand],dim='time')
+        #     self.vars.pop('smand')
+        # else:
+        #     da = ds.smant
+
 
         # Fill any data gaps
         time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
