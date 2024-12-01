@@ -133,7 +133,12 @@ class ERA5Download():
         else:
             times = [self.SAMPLE_TIME]
 
-        if self.req.aws and self.req.frequency==Freq.MONTHLY and 'precip' in self.req.variables[0]:
+        if 'UTCI' in self.req.variables:
+            self._download_utci_data(dates=self.dates,
+                                     area=area_box,
+                                     out_file=self.download_file_path)
+
+        elif self.req.aws and self.req.frequency==Freq.MONTHLY and 'precip' in self.req.variables[0]:
             self._download_aws_data(area=area_box,
                                     out_file=self.download_file_path)
         else:
@@ -145,9 +150,9 @@ class ERA5Download():
                                      out_file=self.download_file_path)
 
         if os.path.isfile(self.download_file_path):
-            self.logger.info("ERA5 data was downloaded to '{}'.".format(self.download_file_path))
+            self.logger.info("C3S data was downloaded to '{}'.".format(self.download_file_path))
         else:
-            raise FileNotFoundError("ERA5 download file '{}' was missing.".format(self.download_file_path))
+            raise FileNotFoundError("C3S download file '{}' was missing.".format(self.download_file_path))
 
         return self.download_file_path
 
@@ -205,8 +210,7 @@ class ERA5Download():
             # Get list of AWS files
             fs = fsspec.filesystem('s3', anon=True)
             sdate = int(self.req.start_date[0:4])
-            # TODO SL Can we fix for later dates?
-            edate = int(self.req.end_date[0:4])+1 #2020 + 1  #
+            edate = int(self.req.end_date[0:4])+1
             years = list(np.arange(sdate, edate, 1))
             self.logger.warning("AWS range restricted to {} to 2020 as the files after cause issues".format(sdate))
             months = list(np.arange(1, 12 + 1, 1))
@@ -351,6 +355,34 @@ class ERA5Download():
             # Delete combined JSON file
             if os.path.exists(cfile):
                 os.remove(cfile)
+
+        else:
+            self.logger.info("Download file '{}' already exists.".format(out_file))
+            outfile_exists = True
+
+        if not os.path.isfile(out_file):
+            raise FileNotFoundError("Output file '{}' could not be located.".format(out_file))
+
+        return outfile_exists
+
+    def _download_utci_data(self, dates: List[date], area: List[float], out_file: str) -> bool:
+
+        """
+        Executes the ERA5 download script in a separate process.
+        :param dates: a list of dates to download data for
+        :param area: area of interest box to download data for
+        :param out_file: output_file_path: path to the output file containing the requested fields.  Supported output format is NetCDF, determined by file extension.
+        :return: nothing
+        """
+        outfile_exists = False
+
+        if not os.path.exists(out_file):
+
+            self.logger.info("Downloading UTCI data for {} {} for {}".format( dates[0], dates[-1], area))
+            result = era_download.download_utci_data(dates=dates, area=str(area), file_path=os.path.expanduser(out_file))
+
+            if result == 0:
+                raise RuntimeError("Download process returned unexpected non-zero exit code '{}'.".format(result))
 
         else:
             self.logger.info("Download file '{}' already exists.".format(out_file))

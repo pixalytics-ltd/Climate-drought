@@ -17,7 +17,8 @@ INDEX_MAP = {
     'SMA_GDO': dri.SMA_GDO,
     'fAPAR': dri.FPAR_GDO,
     'CDI': dri.CDI,
-    'FEATURE_SAFE': dri.FEATURE_SAFE
+    'FEATURE_SAFE': dri.FEATURE_SAFE,
+    'UTCI': dri.UTCI
 }
 
 class DROUGHT:
@@ -38,6 +39,8 @@ class DROUGHT:
 
          # Transfer args
         self.product = args.product
+        if args.utci:
+            self.product = "UTCI"
         self.config = config.Config(args.outdir,args.indir,args.verbose,aws=args.aws,era_daily=args.era_daily)
 
         if args.product == 'CDI':
@@ -127,6 +130,7 @@ def main():
     parser.add_argument("-d", "--eradaily", type=bool, dest="era_daily", default=False)
     parser.add_argument("-sma", "--smasrc", type=str, dest="sma_source", default='GDO', help="'GDO' or 'ECMWF'")
     parser.add_argument("-spi", "--spisrc", type=str, dest="spi_source", default='GDO', help="'GDO' or 'ECMWF'")
+    parser.add_argument("-u", "--utci", action="store_true", default=False, help="Download UTCI5")
 
     # define arguments
     args = parser.parse_args()
