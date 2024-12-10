@@ -1484,9 +1484,19 @@ class UTCI(DroughtIndex):
             utci_file = self.download_obj_utci.download()
         else:
             utci_file = self.download_obj_utci.download_file_path
-        stop
+        print("UTCI file {} exists".format(utci_file))
+
+        # Merge UTCI into SPI
+        ds_utci = xr.open_dataset(self.download_obj_utci.download_file_path).resample(time="MS").max()
+        print(ds_utci)
+        utci_vals = ds_utci.utci.values
+        times = ds_utci.time.values
+        ds['utci'] = xr.DataArray(utci_vals[:,0,0], coords={'time': times}, dims = ['time'])
+
         # Select requested time slice
         ds_filtered = utils.crop_ds(ds, self.args.start_date, self.args.end_date)
+        print("UTCI merged: ",ds_filtered)
+        #stop
 
         # Fill any missing gaps
         time_months = pd.date_range(self.args.start_date, self.args.end_date, freq='1MS')

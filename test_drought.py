@@ -1,5 +1,8 @@
 import os
 from sys import exit
+import numpy as np
+import geopandas as gpd
+import matplotlib.pyplot as plt
 import argparse
 
 
@@ -87,8 +90,20 @@ class DROUGHT:
         if os.path.exists(idx.output_file_path):
             exit_code = 1
             self.logger.info("{} processing complete, generated {}".format(self.product, idx.output_file_path))
+
         else:
             self.logger.info("Processing failed, {} does not exist".format(idx.output_file_path))
+
+        # Load in data and display then plot
+        df = gpd.read_file(idx.output_file_path)
+        print(df)
+        if self.product == 'UTCI':
+            plt.plot(df._date,df.utci/np.linalg.norm(df.utci),color='r',label='utci')
+        plt.plot(df._date,df.spi/np.linalg.norm(df.spi),color='b',label='spi')
+        tick_list = df._date.values[::3]
+        plt.xticks(rotation=45, ticks=tick_list)
+        plt.tight_layout()
+        plt.show()
         
         return exit_code
 
@@ -130,7 +145,7 @@ def main():
     parser.add_argument("-d", "--eradaily", type=bool, dest="era_daily", default=False)
     parser.add_argument("-sma", "--smasrc", type=str, dest="sma_source", default='GDO', help="'GDO' or 'ECMWF'")
     parser.add_argument("-spi", "--spisrc", type=str, dest="spi_source", default='GDO', help="'GDO' or 'ECMWF'")
-    parser.add_argument("-u", "--utci", action="store_true", default=False, help="Download UTCI5")
+    parser.add_argument("-u", "--utci", action="store_true", default=False, help="Download UTCI")
 
     # define arguments
     args = parser.parse_args()
