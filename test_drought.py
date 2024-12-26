@@ -97,11 +97,15 @@ class DROUGHT:
         # Load in data and display then plot
         df = gpd.read_file(idx.output_file_path)
         print(df)
-        if self.product == 'UTCI':
-            plt.plot(df._date,df.utci/np.linalg.norm(df.utci),color='r',label='utci')
-        plt.plot(df._date,df.spi/np.linalg.norm(df.spi),color='b',label='spi')
+        fig, ax1 = plt.subplots()
+        ax1.plot(df._date,df.spi,color='b',label='spi')
+        ax1.set_ylabel('SPI')
         tick_list = df._date.values[::3]
         plt.xticks(rotation=45, ticks=tick_list)
+        if self.product == 'UTCI':
+            ax2 = ax1.twinx()
+            ax2.plot(df._date,df.utci,color='r',label='utci')
+            ax2.set_ylabel('UTCI')
         plt.tight_layout()
         plt.show()
         

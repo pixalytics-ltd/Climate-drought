@@ -21,6 +21,7 @@ dependencies:
     - geopandas
     - h5py
     - jupyter-server-proxy
+    - jupytext
     - kerchunk
     - netcdf4
     - numba==0.56.4

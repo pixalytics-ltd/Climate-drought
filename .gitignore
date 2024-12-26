@@ -139,3 +139,6 @@ src
 output
 input
 temp.json
+
+# Jupyter notebook original format files, saved as markdown
+*.ipynb
