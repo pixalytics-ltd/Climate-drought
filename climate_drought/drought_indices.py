@@ -1390,7 +1390,7 @@ class UTCI(DroughtIndex):
                 self.config,
                 start_date=config.baseline_start,
                 end_date=config.baseline_end,
-                frequency=erq.Freq.MONTHLY,
+                frequency=erq.Freq.DAILY,#MONTHLY,
                 aws=self.config.aws)
 
             # initialise the download object using the request, but don't download yet
