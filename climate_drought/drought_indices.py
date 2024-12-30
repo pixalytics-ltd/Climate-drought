@@ -1362,22 +1362,36 @@ class UTCI(DroughtIndex):
         # initialise the download object using the request, but don't download yet
         self.download_obj = erq.ERA5Download(request, self.logger)
 
-        # also setup download for UTCI
+        #setup download for UTCI
+        download_utci = False
+        if download_utci:
+            # create UTCI request object
+            request = erq.ERA5Request(
+                'UTCI',
+                'utci',
+                self.args,
+                self.config,
+                start_date=config.baseline_start,
+                end_date=config.baseline_end,
+                frequency=erq.Freq.DAILY,
+                aws=self.config.aws)
 
-        # create UTCI request object
-        request = erq.ERA5Request(
-            'UTCI',
-            'utci',
-            self.args,
-            self.config,
-            start_date=config.baseline_start,
-            end_date=config.baseline_end,
-            frequency=erq.Freq.DAILY,
-            aws=self.config.aws)
+            # initialise the download object using the request, but don't download yet
+            self.download_obj_utci = erq.ERA5Download(request, self.logger)
+        else:
+            # create UTCI request object
+            request = erq.ERA5Request(
+                erq.UTCI_VARIABLES,
+                'multi',
+                self.args,
+                self.config,
+                start_date=config.baseline_start,
+                end_date=config.baseline_end,
+                frequency=erq.Freq.MONTHLY,
+                aws=self.config.aws)
 
-        # initialise the download object using the request, but don't download yet
-        self.download_obj_utci = erq.ERA5Download(request, self.logger)
-
+            # initialise the download object using the request, but don't download yet
+            self.download_obj_utci = erq.ERA5Download(request, self.logger)
 
     def download(self):
         """
