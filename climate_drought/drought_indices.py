@@ -18,6 +18,9 @@ from covjson_pydantic.parameter import Parameter, ParameterGroup
 
 # Drought indices calculator
 from climate_drought import indices, config, utils, era5_request as erq, gdo_download as gdo, noaa_download as nd, feature_request as fr, load_feature_file as load
+from xclim.indices import mean_radiant_temperature, universal_thermal_climate_index, uas_vas_2_sfcwind
+from xclim.indicators.atmos import relative_humidity_from_dewpoint
+from xclim.core import units
 
 # pygeometa for OGC API record creation
 import yaml
@@ -996,7 +999,7 @@ class SMA_ECMWF(DroughtIndex):
         
         self.download_obj_baseline = erq.ERA5Download(request_baseline, self.logger)
 
-        #create era5 request object for short term period
+        # create era5 request object for short term period
         request_sample = erq.ERA5Request(
             erq.SOILWATER_VARIABLES,
             'soilwater',
@@ -1500,12 +1503,45 @@ class UTCI(DroughtIndex):
             utci_file = self.download_obj_utci.download_file_path
         print("UTCI file {} exists".format(utci_file))
 
+        # Load data
+        ds_utci = xr.open_dataset(self.download_obj_utci.download_file_path)
+
+        ## change lat & lon to coordinates
+        ds_utci = ds_utci.set_coords(["latitude","longitude"])
+
+        # Check if contains utci, else calculate
+        variables = [i for i in ds_utci.data_vars]
+        if not any("utci" in var for var in variables):
+            print("Calculating UTCI using: {}".format(variables))
+            ## calculate relative humidity
+            ds_utci['hurs'] = relative_humidity_from_dewpoint(ds_utci.t2m, ds_utci.d2m)
+            print("Humidity: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.hurs),np.nanmax(ds_utci.hurs),ds_utci.hurs.attrs["units"]))
+            ## calculate windspeed
+            ds_utci['sfcWind'],ds_utci['sfcWindDir'] = uas_vas_2_sfcwind(ds_utci.u10,ds_utci.v10)
+            print("Wind: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.sfcWind), np.nanmax(ds_utci.sfcWind), ds_utci.sfcWind.attrs["units"]))
+            ## calculate upwelling radiance
+            print("SW Downwelling Radiance: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.msdwswrf), np.nanmax(ds_utci.msdwswrf), ds_utci.msdwswrf.attrs["units"]))
+            ds_utci['rsus'] = ds_utci.msdwswrf - ds_utci.msnswrf
+            ds_utci['rlus'] = ds_utci.msdwlwrf - ds_utci.msnlwrf
+            ds_utci.rsus.attrs["units"] = 'W m**-2'
+            ds_utci.rlus.attrs["units"] = 'W m**-2'
+            ## calculate mean radiant temperature
+            ds_utci['mrt'] = mean_radiant_temperature(ds_utci.msdwswrf, ds_utci.rsus, ds_utci.msdwlwrf, ds_utci.rlus, stat='sunlit')
+            print("MRT: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.mrt), np.nanmax(ds_utci.mrt),ds_utci.mrt.attrs["units"]))
+            ## calculate utci
+            ds_utci['utci'] = universal_thermal_climate_index(tas=ds_utci.t2m, hurs=ds_utci.hurs, sfcWind=ds_utci.sfcWind, mrt=ds_utci.mrt, mask_invalid=False)
+            print("UTCI: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.utci), np.nanmax(ds_utci.utci),ds_utci.mrt.attrs["units"]))
+
         # Merge UTCI into SPI
-        ds_utci = xr.open_dataset(self.download_obj_utci.download_file_path).resample(time="MS").max()
+        ## resample to monthly data
+        ds_utci = ds_utci.resample(time="MS").max()
         print(ds_utci)
         utci_vals = ds_utci.utci.values
         times = ds_utci.time.values
-        ds['utci'] = xr.DataArray(utci_vals[:,0,0], coords={'time': times}, dims = ['time'])
+        if utci_vals.ndim == 1:
+            ds['utci'] = xr.DataArray(utci_vals, coords={'time': times}, dims=['time'])
+        else:
+            ds['utci'] = xr.DataArray(utci_vals[:,0,0], coords={'time': times}, dims = ['time'])
 
         # Select requested time slice
         ds_filtered = utils.crop_ds(ds, self.args.start_date, self.args.end_date)
