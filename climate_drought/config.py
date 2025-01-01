@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime,timedelta
 
 class AnalysisArgs():
     def __init__(self, latitude, longitude, start_date, end_date, product='SPI', oformat='GeoJSON', singleval=False):
@@ -38,7 +38,8 @@ class Config():
         self.era_daily = era_daily
 
         if baseline_end is None:
-            ddn = datetime.now()
+            # Set to the last day of the last month
+            ddn = datetime.now().replace(day=1) - timedelta(days=1)
             yyyy = str(ddn.year)
             mm = ('0' if ddn.month<10 else '') + str(ddn.month)
             dd = ('0' if ddn.day<10 else '') + str(ddn.day)
