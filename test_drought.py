@@ -99,13 +99,13 @@ class DROUGHT:
         print(df)
         fig, ax1 = plt.subplots()
         ax1.plot(df._date,df.spi,color='b',label='spi')
-        ax1.set_ylabel('SPI')
+        ax1.set_ylabel('SPI [blue]')
         tick_list = df._date.values[::3]
         plt.xticks(rotation=45, ticks=tick_list)
         if self.product == 'UTCI':
             ax2 = ax1.twinx()
             ax2.plot(df._date,df.utci,color='r',label='utci')
-            ax2.set_ylabel('UTCI')
+            ax2.set_ylabel('UTCI [degC, red]')
         plt.tight_layout()
         plt.show()
         
