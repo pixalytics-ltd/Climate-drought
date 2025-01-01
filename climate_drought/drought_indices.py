@@ -1522,6 +1522,7 @@ class UTCI(DroughtIndex):
         ds_utci = xr.open_dataset(self.download_obj_utci.download_file_path)
 
         ## change lat & lon to coordinates
+        print(ds_utci)
         ds_utci = ds_utci.set_coords(["latitude","longitude"])
 
         # Check if contains utci, else calculate
@@ -1540,22 +1541,35 @@ class UTCI(DroughtIndex):
             ds_utci['rlus'] = ds_utci.msdwlwrf - ds_utci.msnlwrf
             ds_utci.rsus.attrs["units"] = 'W m**-2'
             ds_utci.rlus.attrs["units"] = 'W m**-2'
+            ## add latitude & longitude units
+            ds_utci.latitude.attrs["units"] = 'degrees_north'
+            ds_utci.longitude.attrs["units"] = 'degrees_east'
+            print("Latitude: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.latitude),np.nanmax(ds_utci.latitude),ds_utci.latitude.attrs["units"]))
+
+            ## reorder time so increasing
+            ds_utci = ds_utci.sortby('time')
+
             ## calculate mean radiant temperature
-            ds_utci['mrt'] = mean_radiant_temperature(ds_utci.msdwswrf, ds_utci.rsus, ds_utci.msdwlwrf, ds_utci.rlus, stat='sunlit')
+            ds_utci['mrt'] = mean_radiant_temperature(ds_utci.msdwswrf, ds_utci.rsus, ds_utci.msdwlwrf, ds_utci.rlus, stat='sunlit') #units.convert_units_to(mrt, "degC")
             print("MRT: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.mrt), np.nanmax(ds_utci.mrt),ds_utci.mrt.attrs["units"]))
             ## calculate utci
-            ds_utci['utci'] = universal_thermal_climate_index(tas=ds_utci.t2m, hurs=ds_utci.hurs, sfcWind=ds_utci.sfcWind, mrt=ds_utci.mrt, mask_invalid=False)
+            ds_utci['utci'] = universal_thermal_climate_index(tas=ds_utci.t2m, hurs=ds_utci.hurs, sfcWind=ds_utci.sfcWind, mrt=ds_utci.mrt, mask_invalid=False)#.convert_units_to(mrt, "degC")
             print("UTCI: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.utci), np.nanmax(ds_utci.utci),ds_utci.mrt.attrs["units"]))
 
-        # Merge UTCI into SPI
-        ## resample to monthly data
-        ds_utci = ds_utci.resample(time="MS").max()
+        # Resample to monthly data if needed
+        if not self.config.era_daily:
+            ds_utci = ds_utci.resample(time="MS").max()
         print(ds_utci)
+
+        # Merge MRT & UTCI into SPI
+        mrt_vals = ds_utci.mrt.values
         utci_vals = ds_utci.utci.values
         times = ds_utci.time.values
         if utci_vals.ndim == 1:
+            ds['mrt'] = xr.DataArray(mrt_vals, coords={'time': times}, dims=['time'])
             ds['utci'] = xr.DataArray(utci_vals, coords={'time': times}, dims=['time'])
         else:
+            ds['mrt'] = xr.DataArray(mrt_vals[:,0,0], coords={'time': times}, dims=['time'])
             ds['utci'] = xr.DataArray(utci_vals[:,0,0], coords={'time': times}, dims = ['time'])
 
         # Select requested time slice
