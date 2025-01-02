@@ -31,7 +31,8 @@ SOILWATER_VARIABLES = ["volumetric_soil_water_layer_1", "volumetric_soil_water_l
                        "volumetric_soil_water_layer_3", "volumetric_soil_water_layer_4"]
 UTCI_VARIABLES = ['2m_dewpoint_temperature',
                   '2m_temperature',
-                  '10m_u_component_of_wind',        '10m_v_component_of_wind','mean_surface_downward_long_wave_radiation_flux',            'mean_surface_downward_short_wave_radiation_flux',
+                  '10m_u_component_of_wind', '10m_v_component_of_wind',
+                  'mean_surface_downward_long_wave_radiation_flux', 'mean_surface_downward_short_wave_radiation_flux',
                   'mean_surface_net_long_wave_radiation_flux',
                   'mean_surface_net_short_wave_radiation_flux']
 
@@ -141,7 +142,7 @@ class ERA5Download():
         else:
             times = [self.SAMPLE_TIME]
 
-        if 'UTCI' in self.req.variables:
+        if any('UTCI' in var for var in self.req.variables):
             self._download_utci_data(dates=self.dates,
                                      area=area_box,
                                      out_file=self.download_file_path)
@@ -160,7 +161,10 @@ class ERA5Download():
         if os.path.isfile(self.download_file_path):
             self.logger.info("C3S data was downloaded to '{}'.".format(self.download_file_path))
         else:
-            raise FileNotFoundError("C3S download file '{}' was missing.".format(self.download_file_path))
+            if any('UTCI' in var for var in self.req.variables):
+                return False
+            else:
+                raise FileNotFoundError("C3S download file '{}' was missing.".format(self.download_file_path))
 
         return self.download_file_path
 
@@ -375,14 +379,14 @@ class ERA5Download():
 
         return outfile_exists
 
-    def _download_utci_data(self, dates: List[date], area: List[float], out_file: str) -> bool:
+    def _download_utci_data(self, dates: List[date], area: List[float], out_file: bool) -> bool:
 
         """
         Executes the ERA5 download script in a separate process.
         :param dates: a list of dates to download data for
         :param area: area of interest box to download data for
         :param out_file: output_file_path: path to the output file containing the requested fields.  Supported output format is NetCDF, determined by file extension.
-        :return: nothing
+        :return: boolean status
         """
         outfile_exists = False
 
@@ -400,6 +404,6 @@ class ERA5Download():
             outfile_exists = True
 
         if not os.path.isfile(out_file):
-            raise FileNotFoundError("Output file '{}' could not be located.".format(out_file))
+            print("UTCI output file '{}' could not be located.".format(out_file))
 
         return outfile_exists
