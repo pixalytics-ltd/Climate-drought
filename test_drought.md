@@ -15,13 +15,14 @@ jupyter:
 
 ```python
 import os
-from sys import exit
+import sys
 import numpy as np
-import geopandas as gpd
 import matplotlib.pyplot as plt
 import argparse
 
-# Links from Climate-drought repository
+import geojson
+
+# import drought indicies
 from climate_drought import drought_indices as dri, config
 
 INDEX_MAP = {
@@ -39,40 +40,49 @@ INDEX_MAP = {
 ```
 
 ```python
-# Setup paramaters
-verbose = True
+class Drought:
+    def __init__(self,latitude,longitude):
+        # Setup paramaters
+        self.verbose = True
 
-indir = '/home/seadas/sajh/pixinternal/Climate-drought/input'
-outdir = '/home/seadas/sajh/pixinternal/Climate-drought/output'
-oformat = 'GeoJSON'
+        self.indir = '/home/seadas/sajh/pixinternal/Climate-drought/input'
+        self.outdir = '/home/seadas/sajh/pixinternal/Climate-drought/output'
+        self.oformat = 'GeoJSON'
 
-product = "UTCI"
-latitude = '52.5' 
-longitude = '1.25'
-start_date = '19900101'
-end_date = '19941231'
+        self.product = "UTCI"
+        self.start_date = '19900101'
+        self.end_date = '19941231'
+        
+        # Convert latitude and longitude strings to lists
+        self.latitude = [float(item) for item in latitude.replace('[','').replace(']','').split(',')]
+        self.longitude = [float(item) for item in longitude.replace('[','').replace(']','').split(',')]
 
-print("Running {} for {} {} from {} to {}".format(product, latitude, longitude, start_date, end_date))
+        # setup config and args
+        self.cfg = config.Config(self.outdir,self.indir)
+        self.args = config.AnalysisArgs(latitude,longitude,self.start_date,self.end_date,
+            product=self.product,oformat=self.oformat)
+
 ```
 
 ```python
-# Convert latitude and longitude strings to lists
-latitude = [float(item) for item in latitude.replace('[','').replace(']','').split(',')]
-longitude = [float(item) for item in longitude.replace('[','').replace(']','').split(',')]
-
-# setup config and args
-config = config.Config(outdir,indir)
-args = config.AnalysisArgs(latitude,longitude,start_date,end_date,
-    product=product,oformat=oformat)
+latitude = '52.5' 
+longitude = '1.25'
  
+obj = Drought(latitude, longitude)
+
+print("Running {} for {} {} from {} to {}".format(obj.product, 
+    obj.latitude, obj.longitude, obj.start_date, obj.end_date))
 ```
 
 ```python
 # Run processing
-def index(product,config,args) -> dri.DroughtIndex:
-   return INDEX_MAP[product](config, args)
+def drought_index(obj) -> dri.DroughtIndex:
+   return INDEX_MAP[obj.product](obj.cfg, obj.args)
 
-idx = index
+idx = drought_index(obj)
+
+print("Computing {} index for {} to {}.".format(obj.product, 
+    obj.cfg.baseline_start, obj.cfg.baseline_end))
 
 if os.path.exists(idx.output_file_path):
     self.logger.info("Processed file '{}' already exists.".format(idx.output_file_path))
@@ -91,18 +101,26 @@ else:
 ```
 
 ```python
+import geopandas as gpd
+
 # Load in data and display then plot
 df = gpd.read_file(idx.output_file_path)
 print(df)
+
+```
+
+```python
+# plotting
+
 fig, ax1 = plt.subplots()
 ax1.plot(df._date,df.spi,color='b',label='spi')
-ax1.set_ylabel('SPI')
+ax1.set_ylabel('SPI[blue]')
 tick_list = df._date.values[::3]
 plt.xticks(rotation=45, ticks=tick_list)
 if self.product == 'UTCI':
     ax2 = ax1.twinx()
     ax2.plot(df._date,df.utci,color='r',label='utci')
-    ax2.set_ylabel('UTCI')
+    ax2.set_ylabel('UTCI[red]')
 plt.tight_layout()
 plt.show()      
 ```
