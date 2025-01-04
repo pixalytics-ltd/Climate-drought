@@ -67,8 +67,8 @@ class Drought:
 product = "UTCI"
 latitude = '52.5' 
 longitude = '1.25'
-start_date = '20200101'
-end_date = '20201231'
+start_date = '20220101'
+end_date = '20221231'
 
 print("Running {} for {} {} from {} to {}".format(product, 
     latitude, longitude, start_date, end_date))
