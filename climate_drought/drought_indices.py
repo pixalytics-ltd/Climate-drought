@@ -225,6 +225,9 @@ class DroughtIndex(ABC):
         # Drop if whole row is NANs
         df = df.dropna(how='all')
 
+        # Replace NANs with None
+        df = df.replace(to_replace=np.NAN, value=None)
+
         for i in df.index:
             feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(i[2]), float(i[1])]},
                        "properties": {}}
@@ -425,11 +428,9 @@ class DroughtIndex(ABC):
 
                 # drop if whole time-series is NANs
                 df = self.data_ds.dropna(dim='time', how='all')
-
                 xr.Dataset(df).to_netcdf(self.output_file_path)
 
             else:  # Generate GeoJSON
-
                 self.generate_geojson()
         else:
             self.logger.warning('Outfile not written: already exists')
@@ -1575,8 +1576,12 @@ class UTCI(DroughtIndex):
                 raise RuntimeError("Unable to downloaded data needed for UTCI.")
 
         ## change lat & lon to coordinates
+        coords = [i for i in ds_utci.coords]
         print(ds_utci)
-        ds_utci = ds_utci.set_coords(["latitude", "longitude"])
+        if any("latitude" in var for var in coords):
+            ds_utci = ds_utci.set_coords(["latitude", "longitude"])
+        else:
+            ds_utci = ds_utci.rename(name_dict={'lat': 'latitude','lon': 'longitude'})
 
         # Check if contains utci, else calculate
         variables = [i for i in ds_utci.data_vars]
@@ -1625,14 +1630,17 @@ class UTCI(DroughtIndex):
         print(ds_utci)
 
         # Merge MRT & UTCI into SPI
-        mrt_vals = ds_utci.mrt.values
+        if any("mrt" in var for var in variables):
+            mrt_vals = ds_utci.mrt.values
         utci_vals = ds_utci.utci.values
         times = ds_utci.time.values
         if utci_vals.ndim == 1:
-            ds['mrt'] = xr.DataArray(mrt_vals, coords={'time': times}, dims=['time'])
+            if any("mrt" in var for var in variables):
+                ds['mrt'] = xr.DataArray(mrt_vals, coords={'time': times}, dims=['time'])
             ds['utci'] = xr.DataArray(utci_vals, coords={'time': times}, dims=['time'])
         else:
-            ds['mrt'] = xr.DataArray(mrt_vals[:, 0, 0], coords={'time': times}, dims=['time'])
+            if any("mrt" in var for var in variables):
+                ds['mrt'] = xr.DataArray(mrt_vals[:, 0, 0], coords={'time': times}, dims=['time'])
             ds['utci'] = xr.DataArray(utci_vals[:, 0, 0], coords={'time': times}, dims=['time'])
 
         # Select requested time slice

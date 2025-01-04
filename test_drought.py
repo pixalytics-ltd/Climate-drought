@@ -105,7 +105,7 @@ class DROUGHT:
         if self.product == 'UTCI':
             ax2 = ax1.twinx()
             ax2.plot(df._date,df.utci,color='r',label='utci')
-            ax2.set_ylabel('UTCI [degC, red]')
+            ax2.set_ylabel('UTCI [K, red]')
         plt.tight_layout()
         plt.show()
         
