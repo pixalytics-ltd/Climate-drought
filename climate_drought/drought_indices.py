@@ -1433,7 +1433,7 @@ class UTCI(DroughtIndex):
             self.config,
             start_date=args.start_date,
             end_date=args.end_date,
-            frequency=erq.Freq.DAILY,
+            frequency=erq.Freq.HOURLY,
             aws=self.config.aws)
 
         # create UTCI request object for monthly download
@@ -1589,50 +1589,54 @@ class UTCI(DroughtIndex):
             print("Calculating UTCI using: {}".format(variables))
             ## calculate relative humidity
             ds_utci['hurs'] = relative_humidity_from_dewpoint(ds_utci.t2m, ds_utci.d2m)
-            print("Humidity: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.hurs), np.nanmax(ds_utci.hurs),
-                                                      ds_utci.hurs.attrs["units"]))
+            print("Humidity: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.hurs), np.nanmax(ds_utci.hurs), ds_utci.hurs.attrs["units"]))
             ## calculate windspeed
             ds_utci['sfcWind'], ds_utci['sfcWindDir'] = uas_vas_2_sfcwind(ds_utci.u10, ds_utci.v10)
-            print("Wind: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.sfcWind), np.nanmax(ds_utci.sfcWind),
-                                                  ds_utci.sfcWind.attrs["units"]))
+            print("Wind: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.sfcWind), np.nanmax(ds_utci.sfcWind), ds_utci.sfcWind.attrs["units"]))
             ## calculate upwelling radiance
-            print("SW Downwelling Radiance: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.msdwswrf),
-                                                                     np.nanmax(ds_utci.msdwswrf),
-                                                                     ds_utci.msdwswrf.attrs["units"]))
+            print("Downwelling Radiance, SW: {:.3f} {:.3f} LW: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.msdwswrf), np.nanmax(ds_utci.msdwswrf),np.nanmin(ds_utci.msdwlwrf), np.nanmax(ds_utci.msdwlwrf), ds_utci.msdwswrf.attrs["units"]))
             ds_utci['rsus'] = ds_utci.msdwswrf - ds_utci.msnswrf
             ds_utci['rlus'] = ds_utci.msdwlwrf - ds_utci.msnlwrf
             ds_utci.rsus.attrs["units"] = 'W m**-2'
             ds_utci.rlus.attrs["units"] = 'W m**-2'
+            print("Upwelling Radiance, SW: {:.3f} {:.3f} LW: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.rsus), np.nanmax(ds_utci.rsus),np.nanmin(ds_utci.rlus), np.nanmax(ds_utci.rlus), ds_utci.rsus.attrs["units"]))
+
             ## add latitude & longitude units
             ds_utci.latitude.attrs["units"] = 'degrees_north'
             ds_utci.longitude.attrs["units"] = 'degrees_east'
-            print("Latitude: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.latitude), np.nanmax(ds_utci.latitude),
-                                                      ds_utci.latitude.attrs["units"]))
+            print("Latitude: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.latitude), np.nanmax(ds_utci.latitude), ds_utci.latitude.attrs["units"]))
 
             ## reorder time so increasing
             ds_utci = ds_utci.sortby('time')
 
             ## calculate mean radiant temperature
-            ds_utci['mrt'] = mean_radiant_temperature(ds_utci.msdwswrf, ds_utci.rsus, ds_utci.msdwlwrf, ds_utci.rlus,
-                                                      stat='sunlit')  # units.convert_units_to(mrt, "degC")
-            print("MRT: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.mrt), np.nanmax(ds_utci.mrt),
-                                                 ds_utci.mrt.attrs["units"]))
+            ds_utci['mrt'] = mean_radiant_temperature(ds_utci.msdwswrf, ds_utci.rsus, ds_utci.msdwlwrf, ds_utci.rlus, stat='sunlit')
+            print("MRT: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.mrt), np.nanmax(ds_utci.mrt), ds_utci.mrt.attrs["units"]))
             ## calculate utci
-            ds_utci['utci'] = universal_thermal_climate_index(tas=ds_utci.t2m, hurs=ds_utci.hurs,
-                                                              sfcWind=ds_utci.sfcWind, mrt=ds_utci.mrt,
-                                                              mask_invalid=False)  # .convert_units_to(mrt, "degC")
-            print("UTCI: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.utci), np.nanmax(ds_utci.utci),
-                                                  ds_utci.mrt.attrs["units"]))
+            ds_utci['utci'] = universal_thermal_climate_index(tas=ds_utci.t2m, hurs=ds_utci.hurs, sfcWind=ds_utci.sfcWind, mrt=ds_utci.mrt, mask_invalid=True)
+            print("UTCI: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.utci), np.nanmax(ds_utci.utci), ds_utci.utci.attrs["units"]))
+
+            # Resample to daily if downloaded as hourly data
+            if 'hourly' in self.download_obj_utci_backup.download_file_path:
+                ds_utci = ds_utci.resample(time="1D").max()#mean()
 
         # Resample to monthly data if needed
         if not self.config.era_daily:
-            ds_utci = ds_utci.resample(time="MS").max()
-        print(ds_utci)
+            ds_utci = ds_utci.resample(time="MS").mean()#max()
 
-        # Merge MRT & UTCI into SPI
+        # Merge MRT & UTCI into SPI & convert MRT to degC
         if any("mrt" in var for var in variables):
-            mrt_vals = ds_utci.mrt.values
-        utci_vals = ds_utci.utci.values
+            mrt = ds_utci.mrt - 272.15
+            mrt_vals = mrt.values
+
+        if np.nanmax(ds_utci.utci) > 100:
+            # Extract UTCI & converted to degC
+            utci = ds_utci.utci - 272.15
+        else:
+            # Extract UTCI
+            utci = ds_utci.utci
+
+        utci_vals = utci.values
         times = ds_utci.time.values
         if utci_vals.ndim == 1:
             if any("mrt" in var for var in variables):
@@ -1646,7 +1650,6 @@ class UTCI(DroughtIndex):
         # Select requested time slice
         ds_filtered = utils.crop_ds(ds, self.args.start_date, self.args.end_date)
         print("UTCI merged: ", ds_filtered)
-        # stop
 
         # Fill any missing gaps
         time_months = pd.date_range(self.args.start_date, self.args.end_date, freq='1MS')
