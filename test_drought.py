@@ -94,17 +94,24 @@ class DROUGHT:
         else:
             self.logger.info("Processing failed, {} does not exist".format(idx.output_file_path))
 
+        # normalise data
+        def norm(data):
+            return (data)/(max(data)-min(data))
+
         # Load in data and display then plot
         df = gpd.read_file(idx.output_file_path)
         print(df)
         fig, ax1 = plt.subplots()
         ax1.plot(df._date,df.spi,color='b',label='spi')
+        #ax1.set_ylim([-1,1])
         ax1.set_ylabel('SPI [blue]')
         tick_list = df._date.values[::3]
         plt.xticks(rotation=45, ticks=tick_list)
         if self.product == 'UTCI':
+            ax1.plot(df._date,df.hindex,color='g',label='utci')
+            ax1.set_ylabel('SPI [blue], Health index [green]')
             ax2 = ax1.twinx()
-            ax2.plot(df._date,df.utci,color='r',label='utci')
+            ax2.plot(df._date, df.utci, color = 'r', label = 'utci')
             ax2.set_ylabel('UTCI [degC, red]')
         plt.tight_layout()
         plt.show()

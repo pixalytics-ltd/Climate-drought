@@ -1635,7 +1635,6 @@ class UTCI(DroughtIndex):
         else:
             # Extract UTCI
             utci = ds_utci.utci
-
         utci_vals = utci.values
         times = ds_utci.time.values
         if utci_vals.ndim == 1:
@@ -1650,6 +1649,30 @@ class UTCI(DroughtIndex):
         # Select requested time slice
         ds_filtered = utils.crop_ds(ds, self.args.start_date, self.args.end_date)
         print("UTCI merged: ", ds_filtered)
+
+        # Calculate Health Index
+        utci_vals = np.array(ds_filtered.utci.values)
+        spi_vals = np.array(ds_filtered.spi.values)
+        health = utci_vals.copy()
+        health[utci_vals < 9] = -1
+        health[utci_vals < 0] = -2
+        health[utci_vals < -13] = -3
+        health[utci_vals < -27] = -4
+        health[utci_vals < -40] = -5
+        health[utci_vals >= 9] = 0
+        health[utci_vals > 26] = 1
+        health[utci_vals > 32] = 2
+        health[utci_vals > 38] = 3
+        health[utci_vals > 46] = 4
+
+        # Add SPI impact, then add to array
+        health += health + ((spi_vals + 1.5) * 0.5)
+        times = ds_filtered.time.values
+        if utci_vals.ndim == 1:
+            ds_filtered['hindex'] = xr.DataArray(health, coords={'time': times}, dims=['time'])
+        else:
+            ds_filtered['hindex'] = xr.DataArray(health[:, 0, 0], coords={'time': times}, dims=['time'])
+        print("Health index: {:.3f} {:.3f}".format(np.nanmin(ds_filtered.hindex), np.nanmax(ds_filtered.hindex)))
 
         # Fill any missing gaps
         time_months = pd.date_range(self.args.start_date, self.args.end_date, freq='1MS')
