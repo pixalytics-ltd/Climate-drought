@@ -1665,8 +1665,17 @@ class UTCI(DroughtIndex):
         health[utci_vals > 38] = 3
         health[utci_vals > 46] = 4
 
-        # Add SPI impact, then add to array
-        health += health + ((spi_vals + 1.5) * 0.5)
+        # Calc SPI impact, then add to array
+        spi = utci_vals.copy()
+        spi[spi_vals <= -1] = 1
+        spi[spi_vals < -1.5] = 2
+        spi[spi_vals < -2] = 3
+        spi[spi_vals > -1] = 0
+        spi[spi_vals > 1] = -1
+        spi[spi_vals > 1.5] = -2
+        spi[spi_vals > 2] = -3
+        # Add together then add to array
+        health += health + spi
         times = ds_filtered.time.values
         if utci_vals.ndim == 1:
             ds_filtered['hindex'] = xr.DataArray(health, coords={'time': times}, dims=['time'])
