@@ -1646,6 +1646,12 @@ class UTCI(DroughtIndex):
                 ds['mrt'] = xr.DataArray(mrt_vals[:, 0, 0], coords={'time': times}, dims=['time'])
             ds['utci'] = xr.DataArray(utci_vals[:, 0, 0], coords={'time': times}, dims=['time'])
 
+        # Drop field that aren't needed
+        if 'expver' in ds.keys():
+            ds = ds.drop_vars('expver')
+        if 'number' in ds.keys():
+            ds = ds.drop_vars('number')
+
         # Select requested time slice
         ds_filtered = utils.crop_ds(ds, self.args.start_date, self.args.end_date)
         print("UTCI merged: ", ds_filtered)
