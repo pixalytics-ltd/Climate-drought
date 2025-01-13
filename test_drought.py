@@ -1,5 +1,8 @@
 import os
 from sys import exit
+import numpy as np
+import geopandas as gpd
+import matplotlib.pyplot as plt
 import argparse
 
 
@@ -17,7 +20,8 @@ INDEX_MAP = {
     'SMA_GDO': dri.SMA_GDO,
     'fAPAR': dri.FPAR_GDO,
     'CDI': dri.CDI,
-    'FEATURE_SAFE': dri.FEATURE_SAFE
+    'FEATURE_SAFE': dri.FEATURE_SAFE,
+    'UTCI': dri.UTCI
 }
 
 class DROUGHT:
@@ -38,6 +42,8 @@ class DROUGHT:
 
          # Transfer args
         self.product = args.product
+        if args.utci:
+            self.product = "UTCI"
         self.config = config.Config(args.outdir,args.indir,args.verbose,aws=args.aws,era_daily=args.era_daily)
 
         if args.product == 'CDI':
@@ -84,8 +90,31 @@ class DROUGHT:
         if os.path.exists(idx.output_file_path):
             exit_code = 1
             self.logger.info("{} processing complete, generated {}".format(self.product, idx.output_file_path))
+
         else:
             self.logger.info("Processing failed, {} does not exist".format(idx.output_file_path))
+
+        # normalise data
+        def norm(data):
+            return (data)/(max(data)-min(data))
+
+        # Load in data and display then plot
+        df = gpd.read_file(idx.output_file_path)
+        print(df)
+        fig, ax1 = plt.subplots()
+        ax1.plot(df._date,df.spi,color='b',label='spi')
+        #ax1.set_ylim([-1,1])
+        ax1.set_ylabel('SPI [blue]')
+        tick_list = df._date.values[::3]
+        plt.xticks(rotation=45, ticks=tick_list)
+        if self.product == 'UTCI':
+            ax1.plot(df._date,df.hindex,color='g',label='utci')
+            ax1.set_ylabel('SPI [blue], Health index [green]')
+            ax2 = ax1.twinx()
+            ax2.plot(df._date, df.utci, color = 'r', label = 'utci')
+            ax2.set_ylabel('UTCI [degC, red]')
+        plt.tight_layout()
+        plt.show()
         
         return exit_code
 
@@ -124,9 +153,10 @@ def main():
     parser.add_argument("-t", "--type", type=str, dest="type", default='none')
     parser.add_argument("-s", "--sdate", type=str, dest="start_date", default='20200116', help="Start date as YYYYMMDD")
     parser.add_argument("-e", "--edate", type=str, dest="end_date", default='20200410', help="End date as YYYYMMDD")
-    parser.add_argument("-d", "--eradaily", type=bool, dest="era_daily", default=False)
+    parser.add_argument("-d", "--eradaily", action="store_true", dest="era_daily", default=False)
     parser.add_argument("-sma", "--smasrc", type=str, dest="sma_source", default='GDO', help="'GDO' or 'ECMWF'")
     parser.add_argument("-spi", "--spisrc", type=str, dest="spi_source", default='GDO', help="'GDO' or 'ECMWF'")
+    parser.add_argument("-u", "--utci", action="store_true", default=False, help="Download UTCI")
 
     # define arguments
     args = parser.parse_args()

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime,timedelta
 
 class AnalysisArgs():
     def __init__(self, latitude, longitude, start_date, end_date, product='SPI', oformat='GeoJSON', singleval=False):
@@ -29,11 +29,21 @@ class CDIArgs(AnalysisArgs):
         self.singleval = singleval # Used for viewer
 
 class Config():
-    def __init__(self,outdir='output',indir='input',verbose=True,baseline_start='19850101',baseline_end='20221231',aws=False,era_daily=False):
+    def __init__(self,outdir='output',indir='input',verbose=True,baseline_start='19850101',baseline_end=None,aws=False,era_daily=False):
         self.outdir = outdir
         self.indir = indir
         self.verbose = verbose
         self.baseline_start = baseline_start
-        self.baseline_end = baseline_end
         self.aws = aws
         self.era_daily = era_daily
+
+        if baseline_end is None:
+            # Set to the last day of the last month
+            ddn = datetime.now().replace(day=1) - timedelta(days=1)
+            yyyy = str(ddn.year)
+            mm = ('0' if ddn.month<10 else '') + str(ddn.month)
+            dd = ('0' if ddn.day<10 else '') + str(ddn.day)
+            baseline_end = yyyy + mm + dd
+
+        self.baseline_end = baseline_end
+
