@@ -26,8 +26,11 @@ url: https://cds.climate.copernicus.eu/api
 key: xxxx
 ```
 
-- Run the test procedure in the activated conda environment where you define a local output directory: `python test_drought.py -y 52.5 -x 1.25 -s 20200101 -e 20221231 -p SPI -o <output-folder>`
-- Run the test_drought notebook
+* Run the test procedure in the activated conda environment where you define a local output directory: `python test_drought.py -y 52.5 -x 1.25 -s 20200101 -e 20221231 -p SPI -o <output-folder>`
+* Run the test_drought notebook, which also needs in the conda environment:
+    * `python -m pip install jupytext --upgrade --user`
+    * `python -m ipykernel install --user --name climate_env --display-name "Python (climate_env)"`
+    * `jupytext --set-formats ipynb,md --sync test_drought.md`
 
 ## Index_viewer web app
 
