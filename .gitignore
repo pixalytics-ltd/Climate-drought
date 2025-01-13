@@ -140,6 +140,9 @@ output
 input
 temp.json
 
+Jupyter notebook files ignored as saved as md
+*.ipynb
+
 # WEkEo deployment
 .conda_envs_dir_test
 climate_env/
