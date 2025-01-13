@@ -8,7 +8,7 @@ jupyter:
       format_version: '1.3'
       jupytext_version: 1.16.6
   kernelspec:
-    display_name: Python (climate_env)
+    display_name: climate_env
     language: python
     name: climate_env
 ---
@@ -45,8 +45,8 @@ class Drought:
         # Setup paramaters
         self.verbose = True
 
-        self.indir = '/home/jovyan/climate-input'
-        self.outdir = '/home/jovyan/climate-output'
+        self.indir = './input'
+        self.outdir = './output'
         self.oformat = 'GeoJSON'
         self.product = product
         self.start_date = start_date
@@ -119,12 +119,18 @@ ax1.plot(df._date,df.spi,color='b',label='spi')
 ax1.set_ylabel('SPI [blue]')
 tick_list = df._date.values[::3]
 plt.xticks(rotation=45, ticks=tick_list)
+minv = np.nanmin([np.nanmin(df.hindex),np.nanmin(df.spi)])
+maxv = np.nanmax([np.nanmax(df.hindex),np.nanmax(df.spi)])
 if product == 'UTCI':
     ax1.plot(df._date,df.hindex,color='g',label='utci')
     ax1.set_ylabel('SPI [blue], Health index [green]')
     ax2 = ax1.twinx()
     ax2.plot(df._date, df.utci, color = 'r', label = 'utci')
     ax2.set_ylabel('UTCI [degC, red]')
+    ax1.fill_between(df._date,1.5,maxv, 
+                     color = 'C1', alpha=0.3, interpolate = True)
+    ax1.fill_between(df._date,-1.5,minv, 
+                     color = 'C0', alpha=0.3, interpolate = True)
 plt.tight_layout()
 plt.show()      
 ```
