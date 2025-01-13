@@ -9,9 +9,10 @@ import xarray as xr
 from climate_drought import utils, config
 # ERA download
 from pixutils import era_download
-# AWS ERA5 data access
-from kerchunk.hdf import SingleHdf5ToZarr
-from kerchunk.combine import MultiZarrToZarr
+# AWS ERA5 data access - changed as casuing issues when reading NetCDFs
+#from kerchunk.hdf import SingleHdf5ToZarr
+#from kerchunk.combine import MultiZarrToZarr
+import kerchunk
 import dask
 from dask.distributed import Client
 import fsspec
@@ -266,7 +267,7 @@ class ERA5Download():
                 jfile = os.path.join(jdir, "{}-{}-aws-precip.json".format(yr, mnth))
                 if not os.path.exists(jfile):
                     with fsspec.open(u, **so) as inf:
-                        h5chunks = SingleHdf5ToZarr(inf, u, inline_threshold=300)
+                        h5chunks = kerchunk.hdf.SingleHdf5ToZarr(inf, u, inline_threshold=300)
                         with fs2.open(jfile, 'wb') as outf:
                             outf.write(ujson.dumps(h5chunks.translate()).encode())
 
@@ -301,7 +302,7 @@ class ERA5Download():
                     jlen = len(jlist)
                     self.logger.debug("Generated {} JSON files {} to {}".format(jlen, os.path.basename(jlist[0]),
                                                                                 os.path.basename(jlist[-1])))
-                    mzz = MultiZarrToZarr(
+                    mzz = kerchunk.combine.MultiZarrToZarr(
                         jlist,
                         remote_protocol="s3",
                         remote_options={'anon': True},
@@ -320,7 +321,7 @@ class ERA5Download():
             # Make combined JSON file
             ## Concatenate along a specified dimension (concat_dims)
             ## Specifying identical coordinates (identical_dims) is not strictly necessary but will speed up computation times.
-            mzz = MultiZarrToZarr(
+            mzz = kerchunk.combine.MultiZarrToZarr(
                 year_jlist,
                 remote_protocol="s3",
                 remote_options={'anon': True},
