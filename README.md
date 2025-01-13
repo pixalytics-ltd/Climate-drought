@@ -18,15 +18,16 @@ Fraction of Active Photosynthetically Active Radiation is obtained from the Glob
 
 ## Testing climate indices
 
-- Register on the Copernicus Climate Services portal: https://cds.climate.copernicus.eu/#!/home
+- Register on the Copernicus Climate Services portal: https://cds.climate.copernicus.eu/how-to-api
 - Get API key details and place in a file in your home directory i.e. create a file in our home directory called `.cdsapirc` with the two lines below where the key should be the one created:
 
 ```
-url: https://cds.climate.copernicus.eu/api/v2
+url: https://cds.climate.copernicus.eu/api
 key: xxxx
 ```
 
 - Run the test procedure in the activated conda environment where you define a local output directory: `python test_drought.py -y 52.5 -x 1.25 -s 20200101 -e 20221231 -p SPI -o <output-folder>`
+- Run the test_drought notebook
 
 ## Index_viewer web app
 
