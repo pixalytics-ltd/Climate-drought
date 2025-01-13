@@ -142,3 +142,7 @@ temp.json
 
 # Jupyter notebook original format files, saved as markdown
 *.ipynb
+
+# WEkEo deployment
+.conda_envs_dir_test
+climate_env/
