@@ -31,6 +31,6 @@ dependencies:
     - scipy
     - shapely
     - sentinelsat
-    - xclim
+    - xclim==0.47.0
     - click<8.1
 prefix: ~/anaconda3/envs/climate_env
