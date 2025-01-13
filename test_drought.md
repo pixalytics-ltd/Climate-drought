@@ -8,7 +8,7 @@ jupyter:
       format_version: '1.3'
       jupytext_version: 1.16.6
   kernelspec:
-    display_name: climate_env
+    display_name: Python (climate_env)
     language: python
     name: climate_env
 ---
@@ -17,9 +17,9 @@ jupyter:
 import os
 import sys
 import numpy as np
+import xarray as xr
 import matplotlib.pyplot as plt
 import argparse
-
 import geojson
 
 # import drought indicies
@@ -45,8 +45,8 @@ class Drought:
         # Setup paramaters
         self.verbose = True
 
-        self.indir = '/home/seadas/sajh/pixinternal/Climate-drought/input'
-        self.outdir = '/home/seadas/sajh/pixinternal/Climate-drought/output'
+        self.indir = '/home/jovyan/climate-input'
+        self.outdir = '/home/jovyan/climate-output'
         self.oformat = 'GeoJSON'
         self.product = product
         self.start_date = start_date
@@ -68,7 +68,7 @@ product = "UTCI"
 latitude = '52.5' 
 longitude = '1.25'
 start_date = '20220101'
-end_date = '20221231'
+end_date = '20241231'
 
 print("Running {} for {} {} from {} to {}".format(product, 
     latitude, longitude, start_date, end_date))
