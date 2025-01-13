@@ -68,7 +68,7 @@ product = "UTCI"
 latitude = '52.5' 
 longitude = '1.25'
 start_date = '20220101'
-end_date = '20221231'
+end_date = '20241231'
 
 print("Running {} for {} {} from {} to {}".format(product, 
     latitude, longitude, start_date, end_date))
@@ -125,6 +125,10 @@ if product == 'UTCI':
     ax2 = ax1.twinx()
     ax2.plot(df._date, df.utci, color = 'r', label = 'utci')
     ax2.set_ylabel('UTCI [degC, red]')
+    ax1.fill_between(df._date,1.5,np.nanmax(df.hindex), 
+                     color = 'C1', alpha=0.3, interpolate = True)
+    ax1.fill_between(df._date,-1.5,np.nanmin(df.hindex), 
+                     color = 'C0', alpha=0.3, interpolate = True)
 plt.tight_layout()
 plt.show()      
 ```
