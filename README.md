@@ -1,4 +1,7 @@
+[![DOI](https://zenodo.org/badge/597664161.svg)](https://doi.org/10.5281/zenodo.14643509)
+
 # Climate-drought
+
 Development of drought indicators linked to the OGC Climate Resilience & Disaster Pilots.
 
 The code includes both pre-computer and computed climate indices, which those marked as experimental where they were included for specific testing purposes
