@@ -9,9 +9,10 @@ import xarray as xr
 from climate_drought import utils, config
 # ERA download
 from pixutils import era_download
-# AWS ERA5 data access
-from kerchunk.hdf import SingleHdf5ToZarr
-from kerchunk.combine import MultiZarrToZarr
+# AWS ERA5 data access - changed as casuing issues when reading NetCDFs
+#from kerchunk.hdf import SingleHdf5ToZarr
+#from kerchunk.combine import MultiZarrToZarr
+import kerchunk
 import dask
 from dask.distributed import Client
 import fsspec
@@ -29,24 +30,32 @@ BOX_SIZE = 0.1
 PRECIP_VARIABLES = ['total_precipitation']
 SOILWATER_VARIABLES = ["volumetric_soil_water_layer_1", "volumetric_soil_water_layer_2",
                        "volumetric_soil_water_layer_3", "volumetric_soil_water_layer_4"]
+UTCI_VARIABLES = ['2m_dewpoint_temperature',
+                  '2m_temperature',
+                  '10m_u_component_of_wind', '10m_v_component_of_wind',
+                  'mean_surface_downward_long_wave_radiation_flux', 'mean_surface_downward_short_wave_radiation_flux',
+                  'mean_surface_net_long_wave_radiation_flux',
+                  'mean_surface_net_short_wave_radiation_flux']
 
 AWSKEY = os.path.join(expanduser('~'), '.aws_api_key')
 AWS_PRECIP_VARIABLE = ['precipitation_amount_1hour_Accumulation']
+
 
 class Freq(Enum):
     MONTHLY = 'monthly'
     DAILY = 'daily'
     HOURLY = 'hourly'
 
+
 class ERA5Request():
     """
     Object to constrain ERA5 download inputs.
     Built inputs using analysis and config arguments.
     """
+
     def __init__(self, variables, fname_out, args: config.AnalysisArgs, config: config.Config,
                  start_date, end_date, frequency: Freq, aws=False):
-
-        bbox = len(args.longitude)>1
+        bbox = len(args.longitude) > 1
         self.minlat = np.min(args.latitude) if bbox else float(args.latitude[0]) - BOX_SIZE
         self.minlon = np.min(args.longitude) if bbox else float(args.longitude[0]) - BOX_SIZE
 
@@ -63,6 +72,7 @@ class ERA5Request():
         self.verbose = config.verbose
         self.frequency = frequency
         self.aws = aws
+
 
 class ERA5Download():
     """
@@ -102,7 +112,7 @@ class ERA5Download():
                                                      la=latstr,
                                                      lo=lonstr,
                                                      fq=self.req.frequency.value)
-    
+
         # Extra identifier for AWS downloaded ERA5 data
         if not self.req.aws:
             aws = ''
@@ -120,20 +130,25 @@ class ERA5Download():
         self.logger.info("Initiating download of ERA5 data.")
         self.logger.info("Variables to be downloaded: {}.".format(", ".join(self.req.variables)))
 
-        area_box = [round(self.req.maxlat,2),
-                    round(self.req.minlon,2),
-                    round(self.req.minlat,2),
-                    round(self.req.maxlon,2)
-        ]
+        area_box = [round(self.req.maxlat, 2),
+                    round(self.req.minlon, 2),
+                    round(self.req.minlat, 2),
+                    round(self.req.maxlon, 2)
+                    ]
 
-        if self.req.frequency==Freq.HOURLY:
+        if self.req.frequency == Freq.HOURLY:
             times = []
             for i in range(24):
                 times.append(time(hour=i, minute=0))
         else:
             times = [self.SAMPLE_TIME]
 
-        if self.req.aws and self.req.frequency==Freq.MONTHLY and 'precip' in self.req.variables[0]:
+        if any('UTCI' in var for var in self.req.variables):
+            self._download_utci_data(dates=self.dates,
+                                     area=area_box,
+                                     out_file=self.download_file_path)
+
+        elif self.req.aws and self.req.frequency == Freq.MONTHLY and 'precip' in self.req.variables[0]:
             self._download_aws_data(area=area_box,
                                     out_file=self.download_file_path)
         else:
@@ -145,9 +160,12 @@ class ERA5Download():
                                      out_file=self.download_file_path)
 
         if os.path.isfile(self.download_file_path):
-            self.logger.info("ERA5 data was downloaded to '{}'.".format(self.download_file_path))
+            self.logger.info("C3S data was downloaded to '{}'.".format(self.download_file_path))
         else:
-            raise FileNotFoundError("ERA5 download file '{}' was missing.".format(self.download_file_path))
+            if any('UTCI' in var for var in self.req.variables):
+                return False
+            else:
+                raise FileNotFoundError("C3S download file '{}' was missing.".format(self.download_file_path))
 
         return self.download_file_path
 
@@ -168,7 +186,8 @@ class ERA5Download():
 
         if not os.path.exists(out_file):
 
-            self.logger.info("Downloading {} ERA data for {} {} for {}".format(frequency.value, dates[0], dates[-1], area))
+            self.logger.info(
+                "Downloading {} ERA data for {} {} for {}".format(frequency.value, dates[0], dates[-1], area))
             result = era_download.download_era5_reanalysis_data(dates=dates,
                                                                 times=times, variables=variables, area=str(area),
                                                                 frequency=frequency.value,
@@ -205,8 +224,7 @@ class ERA5Download():
             # Get list of AWS files
             fs = fsspec.filesystem('s3', anon=True)
             sdate = int(self.req.start_date[0:4])
-            # TODO SL Can we fix for later dates?
-            edate = int(self.req.end_date[0:4])+1 #2020 + 1  #
+            edate = int(self.req.end_date[0:4]) + 1
             years = list(np.arange(sdate, edate, 1))
             self.logger.warning("AWS range restricted to {} to 2020 as the files after cause issues".format(sdate))
             months = list(np.arange(1, 12 + 1, 1))
@@ -249,7 +267,7 @@ class ERA5Download():
                 jfile = os.path.join(jdir, "{}-{}-aws-precip.json".format(yr, mnth))
                 if not os.path.exists(jfile):
                     with fsspec.open(u, **so) as inf:
-                        h5chunks = SingleHdf5ToZarr(inf, u, inline_threshold=300)
+                        h5chunks = kerchunk.hdf.SingleHdf5ToZarr(inf, u, inline_threshold=300)
                         with fs2.open(jfile, 'wb') as outf:
                             outf.write(ujson.dumps(h5chunks.translate()).encode())
 
@@ -283,8 +301,8 @@ class ERA5Download():
                     jlist.sort()  # Sort into numerical order
                     jlen = len(jlist)
                     self.logger.debug("Generated {} JSON files {} to {}".format(jlen, os.path.basename(jlist[0]),
-                                                                               os.path.basename(jlist[-1])))
-                    mzz = MultiZarrToZarr(
+                                                                                os.path.basename(jlist[-1])))
+                    mzz = kerchunk.combine.MultiZarrToZarr(
                         jlist,
                         remote_protocol="s3",
                         remote_options={'anon': True},
@@ -303,7 +321,7 @@ class ERA5Download():
             # Make combined JSON file
             ## Concatenate along a specified dimension (concat_dims)
             ## Specifying identical coordinates (identical_dims) is not strictly necessary but will speed up computation times.
-            mzz = MultiZarrToZarr(
+            mzz = kerchunk.combine.MultiZarrToZarr(
                 year_jlist,
                 remote_protocol="s3",
                 remote_options={'anon': True},
@@ -342,7 +360,8 @@ class ERA5Download():
             ds_subset = ds.where(mask_lon & mask_lat, drop=True)
 
             # Rename variable names
-            ds_subset = ds_subset.rename({'lon': 'longitude', 'lat': 'latitude', AWS_PRECIP_VARIABLE[0]: 'tp', 'time1': 'time'})
+            ds_subset = ds_subset.rename(
+                {'lon': 'longitude', 'lat': 'latitude', AWS_PRECIP_VARIABLE[0]: 'tp', 'time1': 'time'})
             self.logger.debug(ds_subset)
 
             # Write to NetCDF
@@ -358,5 +377,34 @@ class ERA5Download():
 
         if not os.path.isfile(out_file):
             raise FileNotFoundError("Output file '{}' could not be located.".format(out_file))
+
+        return outfile_exists
+
+    def _download_utci_data(self, dates: List[date], area: List[float], out_file: bool) -> bool:
+
+        """
+        Executes the ERA5 download script in a separate process.
+        :param dates: a list of dates to download data for
+        :param area: area of interest box to download data for
+        :param out_file: output_file_path: path to the output file containing the requested fields.  Supported output format is NetCDF, determined by file extension.
+        :return: boolean status
+        """
+        outfile_exists = False
+
+        if not os.path.exists(out_file):
+
+            self.logger.info("Downloading UTCI data for {} {} for {}".format(dates[0], dates[-1], area))
+            result = era_download.download_utci_data(dates=dates, area=str(area),
+                                                     file_path=os.path.expanduser(out_file))
+
+            if result == 0:
+                raise RuntimeError("Download process returned unexpected non-zero exit code '{}'.".format(result))
+
+        else:
+            self.logger.info("Download file '{}' already exists.".format(out_file))
+            outfile_exists = True
+
+        if not os.path.isfile(out_file):
+            print("UTCI output file '{}' could not be located.".format(out_file))
 
         return outfile_exists

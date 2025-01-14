@@ -5,7 +5,9 @@ channels:
 dependencies:
   - birdy
   - gdal>=3.4.1
+  - libnetcdf==4.9.2
   - matplotlib
+  - netcdf4==1.6.3
   - pip
   - python=3.8.16
   - xarray
@@ -16,6 +18,7 @@ dependencies:
     - cdsapi
     - covjson-pydantic
     - dask[distributed]
+    - fiona==1.9.6
     - fsspec
     - geojson
     - geopandas
@@ -31,4 +34,6 @@ dependencies:
     - scipy
     - shapely
     - sentinelsat
+    - xclim==0.47.0
+    - click>=8.1
 prefix: ~/anaconda3/envs/climate_env

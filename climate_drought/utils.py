@@ -222,7 +222,7 @@ class setup_args:
     plot=False
     type='none'
     start_date = '20200101'
-    end_date ='20221231'
+    end_date = '20231231'
     aws = False
     oformat = "GeoJSON"
     sma_source = "GDO"

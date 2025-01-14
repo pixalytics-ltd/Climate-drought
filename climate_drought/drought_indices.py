@@ -9,15 +9,17 @@ from dateutil.relativedelta import relativedelta
 # JSON export
 import json
 import geojson
-import orjson
 from covjson_pydantic.reference_system import ReferenceSystem
 from covjson_pydantic.domain import Domain
 from covjson_pydantic.ndarray import NdArray
 from covjson_pydantic.coverage import Coverage
-from covjson_pydantic.parameter import Parameter, ParameterGroup
+from covjson_pydantic.parameter import Parameter
 
 # Drought indices calculator
-from climate_drought import indices, config, utils, era5_request as erq, gdo_download as gdo, noaa_download as nd, feature_request as fr, load_feature_file as load
+from climate_drought import indices, config, utils, era5_request as erq, gdo_download as gdo, noaa_download as nd, \
+    feature_request as fr, load_feature_file as load
+from xclim.indices import mean_radiant_temperature, universal_thermal_climate_index, uas_vas_2_sfcwind
+from xclim.indicators.atmos import relative_humidity_from_dewpoint
 
 # pygeometa for OGC API record creation
 import yaml
@@ -45,6 +47,73 @@ class SSType(Enum):
     POINT = 'point'
     BBOX = 'bbox'
     POLYGON = 'polygon'
+
+class SSType(Enum):
+    """
+    Spatial selection type
+    """
+    POINT = 'point'
+    BBOX = 'bbox'
+    POLYGON = 'polygon'
+
+
+# Shared constants
+BOX_SIZE = 0.1
+
+# where working in netcdf, and if using a polygon, we need a value to show where in the grid is not included in the polygon (since xarray covers a rectangular/square lat/lon area)
+# this can't be nan as we can't differentiate between no data, so needs a unique value
+OUTSIDE_AREA_SELECTION = np.nan  # -99999
+
+
+class VarInfo():
+    """
+    Describes a variable which is output as part of the larger Drought Index object
+    E.g. SPI_ECMWF outputs tp (total precipitation) and spi
+    """
+
+    def __init__(self, longname, units, label, link="https://xxx", gridsize=None):
+        self.longname = longname
+        self.units = units
+        self.label = label
+        self.link = link
+        self.gridsize = gridsize
+
+
+ALL_VARS = {
+    'spg03': VarInfo('Standard Precipitation Index', 'unitless', 'Standard Precipitation Index',
+                     "https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi", gridsize=1),
+    'smand': VarInfo('Soil Moisture Anomaly', 'unitless', 'Soil Moisture Anomaly',
+                     "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables",
+                     gridsize=0.1),
+    'smant': VarInfo('Soil Moisture Anomaly', 'unitless', 'Soil Moisture Anomaly',
+                     "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables",
+                     gridsize=0.1),
+    'fpanv': VarInfo('fraction Absorbed Photosynthetically Active Radiation (fAPAR) Anomaly', 'unitless',
+                     'fAPAR_anomaly', gridsize=0.083),
+    'tp': VarInfo('Total Precipitation', 'm', 'Precipitation_amount',
+                  "https://vocab.nerc.ac.uk/standard_name/precipitation_amount/"),
+    'spi': VarInfo('Standard Precipitation Index', 'unitless', 'Standard Precipitation Index',
+                   "https://climatedataguide.ucar.edu/climate-data/standardized-precipitation-index-spi"),
+    'swvl1': VarInfo('Soil Water Volume Layer 1', 'm3/m3', 'Soil_moisture_amount',
+                     "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+    'swvl2': VarInfo('Soil Water Volume Layer 2', 'm3/m3', 'Soil_moisture_amount',
+                     "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+    'swvl3': VarInfo('Soil Water Volume Layer 3', 'm3/m3', 'Soil_moisture_amount',
+                     "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+    'swvl4': VarInfo('Soil Water Volume Layer 4', 'm3/m3', 'Soil_moisture_amount',
+                     "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+    'zscore_swvl1': VarInfo('Soil Moisture Anomaly Layer 1', 'unitless', 'Soil Moisture Anomaly',
+                            "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+    'zscore_swvl2': VarInfo('Soil Moisture Anomaly Layer 2', 'unitless', 'Soil Moisture Anomaly',
+                            "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+    'zscore_swvl3': VarInfo('Soil Moisture Anomaly Layer 3', 'unitless', 'Soil Moisture Anomaly',
+                            "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+    'zscore_swvl4': VarInfo('Soil Moisture Anomaly Layer 4', 'unitless', 'Soil Moisture Anomaly',
+                            "https://climatedataguide.ucar.edu/climate-data/soil-moisture-data-sets-overview-comparison-tables"),
+    'CDI': VarInfo('Combined Drought Index', 'unitless', 'Combined Drought Index'),
+    'temp': VarInfo('Temperature', 'm', 'Max_Temp'),
+    'utci': VarInfo('UTCI', 'K', 'Universal Thermal Climate Index'),
+}
 
 
 # Shared constants
@@ -90,37 +159,38 @@ class DroughtIndex(ABC):
     """
     Base class providing functionality for all drought indices
     """
-    def __init__(self, config: config.Config, args: config.AnalysisArgs, vars: Dict[str,VarInfo]):
+    def __init__(self, config: config.Config, args: config.AnalysisArgs, vars: Dict[str, VarInfo]):
         """
         Initializer.
         :param config: config object
         :param args: analysis args object
         """
-        
+
         # transfer inputs
         self.config = config
         self.args = args
         self.vars = vars
 
         # turn lat, lon input into a list if necessary
-        if not isinstance(args.latitude,list):
+        if not isinstance(args.latitude, list):
             self.args.latitude = [args.latitude]
-        if not isinstance(args.longitude,list):
+        if not isinstance(args.longitude, list):
             self.args.longitude = [args.longitude]
-        if not len(self.args.latitude)==len(self.args.latitude):
+        if not len(self.args.latitude) == len(self.args.latitude):
             self.logger.error('Latitude and longitude input must be single numbers or lists of the same length.')
             quit()
 
         # determine if we'e dealing with a point, polygon or bounding box
-        if len(self.args.latitude)==1:
+        if len(self.args.latitude) == 1:
             self.sstype = SSType.POINT
-        elif len(self.args.latitude)==2:
+        elif len(self.args.latitude) == 2:
             self.sstype = SSType.BBOX
         else:
             self.sstype = SSType.POLYGON
 
         # set up logger
-        self.logger = logging.basicConfig(filename='{0}/log_{1}.txt'.format(config.outdir,datetime.datetime.now()),level=logging.DEBUG)
+        self.logger = logging.basicConfig(filename='{0}/log_{1}.txt'.format(config.outdir, datetime.datetime.now()),
+                                          level=logging.DEBUG)
         self.logger = logging.getLogger("ERA5_Processing")
         self.logger.setLevel(logging.DEBUG) if config.verbose else self.logger.setLevel(logging.INFO)
 
@@ -131,7 +201,7 @@ class DroughtIndex(ABC):
 
     @property
     def index_shortname(self):
-        return type(self).__name__.replace('_','')
+        return type(self).__name__.replace('_', '')
 
     @property
     def output_file_path(self):
@@ -140,7 +210,7 @@ class DroughtIndex(ABC):
         :return: path to the output file
         """
 
-        bbox = len(self.args.longitude)>1
+        bbox = len(self.args.longitude) > 1
         minlat = np.min(self.args.latitude) if bbox else float(self.args.latitude[0]) - BOX_SIZE
         minlon = np.min(self.args.longitude) if bbox else float(self.args.longitude[0]) - BOX_SIZE
 
@@ -156,16 +226,17 @@ class DroughtIndex(ABC):
 
         file_str = "{sd}-{ed}_{la}_{lo}".format(sd=self.args.start_date, ed=self.args.end_date, la=latstr, lo=lonstr)
         oformat = self.args.oformat.lower()
-        if "cov" in oformat: # Generate CoverageJSON file
+        if "cov" in oformat:  # Generate CoverageJSON file
             file_ext = 'covjson'
         elif "csv" in oformat:  # Generate CSV
             file_ext = 'csv'
         elif "net" in oformat:  # Generate NetCDF
             file_ext = 'nc'
-        else: # Generate GeoJSON
+        else:  # Generate GeoJSON
             file_ext = 'json'
 
-        return os.path.join(self.config.outdir, self.index_shortname.lower() + "_{d}.{e}".format(d=file_str, e=file_ext))
+        return os.path.join(self.config.outdir,
+                            self.index_shortname.lower() + "_{d}.{e}".format(d=file_str, e=file_ext))
 
     @abstractclassmethod
     def download(self) -> List[str]:
@@ -192,18 +263,22 @@ class DroughtIndex(ABC):
         self.feature_collection = {"type": "FeatureCollection", "features": []}
 
         # Reindex and drop duplicates
-        df = self.data_df.set_index(['time','latitude','longitude'])
+        df = self.data_df.set_index(['time', 'latitude', 'longitude'])
         df = df.drop_duplicates()
-        #print("Data frame: ", self.data_df)
+        # print("Data frame: ", self.data_df)
 
         # Drop if whole row is NANs
         df = df.dropna(how='all')
 
+        # Replace NANs with None
+        df = df.replace(to_replace=np.NAN, value=None)
+
         for i in df.index:
-            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(i[2]), float(i[1])]}, "properties": {}}
+            feature = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [float(i[2]), float(i[1])]},
+                       "properties": {}}
 
             # Extract columns as properties
-            property = df.loc[i].to_json(date_format='iso', force_ascii = True)
+            property = df.loc[i].to_json(date_format='iso', force_ascii=True)
             parsed = json.loads(property)
 
             # Add time as a property
@@ -212,11 +287,10 @@ class DroughtIndex(ABC):
             properties.update({"_date": i[0].strftime("%Y-%m-%d")})
             properties.update(parsed)
             feature['properties'] = properties
-            #self.logger.info("{} Feature: {}".format(i, properties))#['spi']))
             # Add feature
             self.feature_collection['features'].append(feature)
         dump = geojson.dumps(self.feature_collection, indent=4)
-        #self.logger.info("JSON: ",dump)
+        # self.logger.info("JSON: ",dump)
 
         # Reload to check formatting
         json_x = geojson.loads(dump)
@@ -249,7 +323,7 @@ class DroughtIndex(ABC):
                     "en": val.longname
                 },
                 unit={
-                    "symbol":val.units
+                    "symbol": val.units
                 },
                 observedProperty={
                     "id": val.link,
@@ -260,10 +334,10 @@ class DroughtIndex(ABC):
             )
             # Add each variable data to ranges
             ranges[key] = NdArray(
-                axisNames=["x","y","t"],
-                shape=[len(longitudes),len(latitudes),len(dates)],
+                axisNames=["x", "y", "t"],
+                shape=[len(longitudes), len(latitudes), len(dates)],
                 values=df[key].to_numpy().flatten().tolist()
-                )
+            )
         # Create Structure
         self.feature_collection = Coverage(
             domain=Domain(
@@ -281,7 +355,7 @@ class DroughtIndex(ABC):
 
         # TODO Indent option now fails
         self.logger.warning("The CovJSON indenting option is no longer working - need to look at")
-        json_x = self.feature_collection.json(exclude_none=True)#, indent=True)
+        json_x = self.feature_collection.json(exclude_none=True)  # , indent=True)
         f = open(self.output_file_path, "w", encoding='utf-8')
         f.write(json_x)
 
@@ -299,17 +373,18 @@ class DroughtIndex(ABC):
             f.close()
 
         # Define output record yaml
-        out_yaml = os.path.join(os.path.dirname(__file__), os.path.splitext(os.path.basename(yaml_file))[0] + "-updated.yml")
+        out_yaml = os.path.join(os.path.dirname(__file__),
+                                os.path.splitext(os.path.basename(yaml_file))[0] + "-updated.yml")
 
         # Update bounding box
         self.logger.info("dataMap: {} ".format(dataMap['identification']['extents']['spatial']))
         yaml_dict = {}
         ## [bounds.left, bounds.bottom, bounds.right, bounds.top]
-        if self.sstype==SSType.POINT:
-            minlo = self.args.longitude[0]-BOX_SIZE
-            minla = self.args.latitude[0]-BOX_SIZE
-            maxlo = self.args.longitude[0]+BOX_SIZE
-            maxla = self.args.latitude[0]+BOX_SIZE
+        if self.sstype == SSType.POINT:
+            minlo = self.args.longitude[0] - BOX_SIZE
+            minla = self.args.latitude[0] - BOX_SIZE
+            maxlo = self.args.longitude[0] + BOX_SIZE
+            maxla = self.args.latitude[0] + BOX_SIZE
         else:
             minlo = np.min(self.args.longitude)
             minla = np.min(self.args.latitude)
@@ -317,7 +392,7 @@ class DroughtIndex(ABC):
             maxla = np.max(self.args.latitude)
         float_bbox = '[{:.3f},{:.3f},{:.3f},{:.3f}]'.format(minlo, minla, maxlo, maxla)
         yaml_dict.update({'bbox': ast.literal_eval(float_bbox)})
-        #yaml_dict.update({'crs': ast.literal_eval(dst_crs.split(":")[1])})
+        # yaml_dict.update({'crs': ast.literal_eval(dst_crs.split(":")[1])})
 
         # remove single quotes
         res = {key.replace("'", ""): val for key, val in yaml_dict.items()}
@@ -391,48 +466,48 @@ class DroughtIndex(ABC):
                 # drop if whole row is NANs
                 df = self.data_df.dropna(how='all')
 
-                df.to_csv(self.output_file_path,index=False)
+                df.to_csv(self.output_file_path, index=False)
 
             elif "net" in oformat:  # Generate NetCDF
 
                 # drop if whole time-series is NANs
                 df = self.data_ds.dropna(dim='time', how='all')
-
                 xr.Dataset(df).to_netcdf(self.output_file_path)
 
             else:  # Generate GeoJSON
-
                 self.generate_geojson()
         else:
             self.logger.warning('Outfile not written: already exists')
+
 
 class GDODroughtIndex(DroughtIndex):
     """
     Specialisation of the Drought class for processing pre-computed indices from the Global Drought Observatory.
     """
+
     def __init__(self, config: config.Config, args: config.AnalysisArgs, prod_code: Union[List[str], str]):
 
         # Turn product code into list if not already
-        self.prod_code = [prod_code] if isinstance(prod_code,str) else prod_code
+        self.prod_code = [prod_code] if isinstance(prod_code, str) else prod_code
 
         # Get variable details for requested products
         vars = dict(filter(lambda k: k[0] in self.prod_code, ALL_VARS.items()))
 
-        super().__init__(config,args,vars)
+        super().__init__(config, args, vars)
         self.grid_size = next(iter(self.vars.values())).gridsize
         self.fileloc = config.indir + "/" + self.prod_code[0]
         if not os.path.isdir(self.fileloc):
             os.mkdir(self.fileloc)
 
         # Create GDO download objects so we can see what the filenames are
-        
+
         ## create list of years to download data for
-        years = np.arange(int(self.args.start_date[:4]),int(self.args.end_date[:4])+1)
+        years = np.arange(int(self.args.start_date[:4]), int(self.args.end_date[:4]) + 1)
 
         dl_objs = []
         for y in years:
             for pc in self.prod_code:
-                obj = gdo.GDODownload(y,pc,self.fileloc,logger=self.logger)
+                obj = gdo.GDODownload(y, pc, self.fileloc, logger=self.logger)
                 if obj.success:
                     dl_objs.append(obj)
 
@@ -441,7 +516,7 @@ class GDODroughtIndex(DroughtIndex):
 
     def download(self):
 
-        self.logger.info("Downloading {} files to {}".format(len(self.files),self.fileloc))
+        self.logger.info("Downloading {} files to {}".format(len(self.files), self.fileloc))
         filelist = []
         for f in self.files:
             if "https" in f.files_to_download:
@@ -450,44 +525,45 @@ class GDODroughtIndex(DroughtIndex):
                 filelist = filelist + f.files_to_download
 
         self.filepaths = [self.fileloc + "/" + f for f in filelist]
-                
-        if len(self.filepaths)==0:
+        if len(self.filepaths) == 0:
             self.logger.error('No files available to be processed')
             return None
         else:
             return self.filepaths
-            
+
     def load_and_trim(self):
 
         def open_point(fname):
-            return xr.open_dataset(fname).sel(lat=self.args.latitude,lon=self.args.longitude,method='nearest').drop_vars(['4326']) 
+            return xr.open_dataset(fname).sel(lat=self.args.latitude, lon=self.args.longitude,
+                                              method='nearest').drop_vars(['4326'])
 
         def open_bbox(fname):
             ds = xr.open_dataset(fname).drop_vars(['4326'])
             try:
                 mask = utils.mask_ds_bbox(ds,
-                    np.min(self.args.longitude),
-                    np.max(self.args.longitude),
-                    np.min(self.args.latitude),
-                    np.max(self.args.latitude))
-            except: # Expand bounds
+                                          np.min(self.args.longitude),
+                                          np.max(self.args.longitude),
+                                          np.min(self.args.latitude),
+                                          np.max(self.args.latitude))
+            except:  # Expand bounds
                 mask = utils.mask_ds_bbox(ds,
-                    np.min(self.args.longitude)-(BOX_SIZE*3),
-                    np.max(self.args.longitude)+(BOX_SIZE*3),
-                    np.min(self.args.latitude)-(BOX_SIZE*3),
-                    np.max(self.args.latitude)+(BOX_SIZE*3))
+                                          np.min(self.args.longitude) - (BOX_SIZE * 3),
+                                          np.max(self.args.longitude) + (BOX_SIZE * 3),
+                                          np.min(self.args.latitude) - (BOX_SIZE * 3),
+                                          np.max(self.args.latitude) + (BOX_SIZE * 3))
                 self.logger.info("Needed to expand bounding box: {} ".format(mask.dims))
             return mask
 
         def open_poly(fname):
-            ds = xr.open_dataset(fname).drop_vars(['4326']) 
+            ds = xr.open_dataset(fname).drop_vars(['4326'])
             return utils.mask_ds_poly(ds,
-                                        self.args.latitude,
-                                        self.args.longitude,
-                                        self.grid_size,
-                                        self.grid_size,
-                                        other = OUTSIDE_AREA_SELECTION
-                                        )
+                                      self.args.latitude,
+                                      self.args.longitude,
+                                      self.grid_size,
+                                      self.grid_size,
+                                      other=OUTSIDE_AREA_SELECTION
+                                      )
+
         # Methods to open data
         open_func = {
             SSType.POINT.value: open_point,
@@ -500,13 +576,47 @@ class GDODroughtIndex(DroughtIndex):
 
         # Trim to required dates
         try:
-            ds = ds.sel(time=slice(pd.Timestamp(self.args.start_date),pd.Timestamp(self.args.end_date)))
+            ds = ds.sel(time=slice(pd.Timestamp(self.args.start_date), pd.Timestamp(self.args.end_date)))
         except:
-            self.logger.error("Couldn't slice data between {} and {}".format(self.args.start_date,self.args.end_date))
+            self.logger.error("Couldn't slice data between {} and {}".format(self.args.start_date, self.args.end_date))
             return None
 
         return ds
-  
+
+
+class SPI_GDO(GDODroughtIndex):
+    """
+    Specialisation of the GDODrought class for processing pre-computed photosynthetically active radiation anomaly data from GDO.
+    """
+
+    def __init__(self, config: config.Config, args: config.AnalysisArgs):
+        super().__init__(config, args, 'spg03')
+
+    def process(self):
+        ds = super().load_and_trim()
+        if ds is None:
+            self.logger.error("No data available")
+            return None
+
+        # Fill any data gaps
+        time_months = pd.date_range(self.args.start_date, self.args.end_date, freq='1MS')
+        ds = ds.reindex({'time': time_months})
+
+        # Rename lat and lon coords for consitency with other drought indices
+        ds = ds.rename({'lat': 'latitude', 'lon': 'longitude'})
+
+        self.data_ds = ds
+
+        # Convert to df for output
+        df = ds.to_dataframe().reset_index()
+
+        # Drop locations outside of selected area
+        df = df[df.spg03 != OUTSIDE_AREA_SELECTION]
+        self.data_df = df
+
+        return df
+
+
 class SPI_ECMWF(DroughtIndex):
 
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
@@ -516,24 +626,24 @@ class SPI_ECMWF(DroughtIndex):
         :param working_dir: directory that will hold all files generated by the class
         """
         # Get variable details for requested products
-        vars = dict(filter(lambda k: k[0] in ['tp','spi'], ALL_VARS.items()))
+        vars = dict(filter(lambda k: k[0] in ['tp', 'spi'], ALL_VARS.items()))
 
         # precipitation download must return a baseline time series because this is a requirement of the outsourced spi calculation algorithm
         super().__init__(config, args, vars)
-        
+
         # create era5 request object
         request = erq.ERA5Request(
             erq.PRECIP_VARIABLES,
             'precip',
             self.args,
-            self.config, 
+            self.config,
             start_date=config.baseline_start,
             end_date=config.baseline_end,
             frequency=erq.Freq.MONTHLY,
             aws=self.config.aws)
 
         # initialise the download object using the request, but don't download yet
-        self.download_obj = erq.ERA5Download(request,self.logger)
+        self.download_obj = erq.ERA5Download(request, self.logger)
 
     def download(self):
         """
@@ -560,15 +670,14 @@ class SPI_ECMWF(DroughtIndex):
 
         # Extract data from NetCDF file
         ds = xr.open_dataset(self.download_obj.download_file_path)
-
-        if 'expver' in ds.keys():
-            ds = ds.sel(expver=1,drop=True)
+        # if 'expver' in ds.keys():
+        #    ds = ds.sel(expver=1,drop=True)
 
         self.logger.debug("Precip xarray:")
         self.logger.debug(ds)
 
         # Mask polygon if needed
-        if self.sstype.value==SSType.POLYGON.value:
+        if self.sstype.value == SSType.POLYGON.value:
             ds = utils.mask_ds_poly(
                 ds=ds,
                 lats=self.args.latitude,
@@ -588,10 +697,10 @@ class SPI_ECMWF(DroughtIndex):
         spi = indices.INDICES()
 
         # Convert to monthly sums and extract max of the available cells
-        if self.config.aws or self.config.era_daily: # or any other setting which would result in more than monthy data
+        if self.config.aws or self.config.era_daily:  # or any other setting which would result in more than monthy data
             da = da.resample(time='1MS').sum()
-            
-        if self.sstype.value==SSType.POINT.value:
+
+        if self.sstype.value == SSType.POINT.value:
             da = da.max(['latitude', 'longitude']).load()
 
             # Calculate SPI from precip
@@ -602,22 +711,25 @@ class SPI_ECMWF(DroughtIndex):
             lat = np.repeat(self.args.latitude, num_vals)
             lon = np.repeat(self.args.longitude, num_vals)
             ds = xr.Dataset(data_vars={'tp': da, 'spi': ("time", spi_vals)})
-            ds = ds.assign_coords({"longitude": lon})\
+            ds = ds.assign_coords({"longitude": lon}) \
                 .assign_coords({"latitude": lat})
 
-            #print("ECMWF ds: ",ds)
+            # print("ECMWF ds: ",ds)
 
         else:
-            spi_vals = xr.apply_ufunc(spi.calc_spi,da,input_core_dims=[['time']],output_core_dims=[['time']],vectorize=True)
+            spi_vals = xr.apply_ufunc(spi.calc_spi, da, input_core_dims=[['time']], output_core_dims=[['time']],
+                                      vectorize=True)
 
             # Store spi
-            ds = xr.Dataset(data_vars={'tp':da,'spi':spi_vals})
+            ds = xr.Dataset(data_vars={'tp': da, 'spi': spi_vals})
 
-        self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(da.values), np.nanmin(da.values), np.nanmax(da.values)))
-        self.logger.info("SPI, {} values: {:.3f} {:.3f}".format(len(spi_vals), np.nanmin(spi_vals),np.nanmax(spi_vals)))
+        self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(da.values), np.nanmin(da.values),
+                                                                                 np.nanmax(da.values)))
+        self.logger.info(
+            "SPI, {} values: {:.3f} {:.3f}".format(len(spi_vals), np.nanmin(spi_vals), np.nanmax(spi_vals)))
 
         return ds
-    
+
     def process(self):
         """
         Carries out processing of the downloaded data.  This is the main functionality that is likely to differ between
@@ -627,16 +739,17 @@ class SPI_ECMWF(DroughtIndex):
         self.logger.info("Initiating processing of ERA5 daily data.")
 
         if not os.path.isfile(self.download_obj.download_file_path):
-            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.spi_download.download_file_path))
-        
+            raise FileNotFoundError(
+                "Unable to locate downloaded data '{}'.".format(self.spi_download.download_file_path))
+
         # Calculates SPI precipitation drought index
         ds = self.convert_precip_to_spi()
 
         # Select requested time slice
-        ds_filtered = utils.crop_ds(ds,self.args.start_date,self.args.end_date)
+        ds_filtered = utils.crop_ds(ds, self.args.start_date, self.args.end_date)
 
         # Fill any missing gaps
-        time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
+        time_months = pd.date_range(self.args.start_date, self.args.end_date, freq='1MS')
         ds_reindexed = ds_filtered.reindex({'time': time_months})
 
         df_reindexed = ds_reindexed.to_dataframe().reset_index()
@@ -648,38 +761,298 @@ class SPI_ECMWF(DroughtIndex):
         self.generate_output()
 
         return df_reindexed
-      
-class SPI_GDO(GDODroughtIndex):
-    """
-    Specialisation of the GDODrought class for processing pre-computed photosynthetically active radiation anomaly data from GDO.
-    """
+
+
+class SPI_NCG(DroughtIndex):
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
-        super().__init__(config,args,'spg03')
+        """
+        Metadata: https://www.drought.gov/data-maps-tools/gridded-climate-datasets-noaas-nclimgrid-monthly
+        Spatial extent: -124.6875 to -67.020836W, 24.562532 to 49.3542N
+        Temporal extent: 
+        :param args: program arguments
+        :param working_dir: directory that will hold all files generated by the class
+        """
+        # precipitation download must return a baseline time series because this is a requirement of the outsourced spi calculation algorithm
+        super().__init__(config, args)
+
+        maxlat = 49.3542
+        minlat = 24.562532
+        maxlon = -67.020836
+        minlon = -124.6875
+
+        # check requeste data is within space constraints
+        isbetween = lambda x, a, b: (x >= a) and (x <= b)
+        if not isbetween(args.latitude, minlat, maxlat):
+            self.logger.error('Latitude outside data extent: {0} to {1}N'.format(minlat, maxlat))
+            quit()
+        elif not isbetween(args.longitude, minlon, maxlon):
+            self.logger.error('Longitude outside data extent: {0} to {1}N'.format(minlon, maxlon))
+            quit()
+
+        # define a filename to output to
+        self.filename = os.path.join(config.indir, "/noaa_prcp_{sd}-{ed}_{la}_{lo}.csv".format(
+            sd=config.baseline_start,
+            ed=config.baseline_end,
+            la=args.latitude,
+            lo=args.longitude))
+
+    def download(self):
+        """
+        Download required data from NOAA portal.
+        The processing part of the SPI calculation requires that the long term dataset is passed in at the same time as the short term analysis period therefore we must request the whole baseline period for this analysis.
+        :output: list containing name of single generated csv file. 
+        """
+
+        if os.path.exists(self.filename):
+            self.logger.info("Downloaded file '{}' already exists.".format(self.filename))
+        else:
+            downloaded_file = nd.get_nclimgrid(self.args.longitude, self.args.latitude,
+                                               self.config.baseline_start, self.config.baseline_end,
+                                               nd.NClimGridParams.PRECIPITATION, self.filename)
+            self.logger.info("Downloading  for '{}' completed.".format(downloaded_file))
+
+        return self.filename
+
+    def convert_precip_to_spi(self) -> None:
+        """
+        Calculates SPI precipitation drought index
+        :param input_file_path: path to file containing precipitation
+        :param output_file_path: path to file to be written containing SPI
+        :return: nothing
+        """
+
+        # Extract data from csv
+        df = pd.read_csv(self.filename, index_col='time', parse_dates=True)
+
+        # Calculate SPI and add to df
+        spi = indices.INDICES()
+        spi_vals = spi.calc_spi(df['prcp'].to_numpy())
+        df['spi'] = spi_vals
+
+        # Select requested time slice
+        df_filtered = utils.crop_df(df, self.args.start_date, self.args.end_date)
+
+        return df_filtered
 
     def process(self):
-        ds = super().load_and_trim()
-        
-        if ds is None:
-            self.logger.error("No data available")
-            return None
+        """
+        Carries out processing of the downloaded data. 
+        :return: path to the output file generated by the algorithm
+        """
+        self.logger.info("Initiating processing of ERA5 daily data.")
 
-        # Fill any data gaps
-        time_months = pd.date_range(self.args.start_date,self.args.end_date,freq='1MS')
-        ds = ds.reindex({'time': time_months})
+        if not os.path.isfile(self.filename):
+            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.filename))
 
-        # Rename lat and lon coords for consitency with other drought indices
-        ds = ds.rename({'lat':'latitude','lon':'longitude'})
+        # Calculates SPI precipitation drought index
+        ds = self.convert_precip_to_spi()
 
-        self.data_ds = ds
+        # Select requested time slice
+        ds_filtered = utils.crop_ds(ds,self.args.start_date,self.args.end_date)
 
-        # Convert to df for output
-        df = ds.to_dataframe().reset_index()
+        # Fill any missing gaps
+        time_months = pd.date_range(self.args.start_date, self.args.end_date, freq='1MS')
+        df_filtered = utils.fill_gaps(time_months, df_filtered)
 
-        # Drop locations outside of selected area
-        df = df[df.spg03!=OUTSIDE_AREA_SELECTION]
-        self.data_df = df
+        # store processed data on object
+        self.data_df = df_filtered
 
-        return df
+        self.generate_output()
+
+        return df_filtered
+
+
+class FEATURE_SAFE(DroughtIndex):
+    def __init__(self, config: config.Config, args: config.AnalysisArgs):
+        """
+        Spatial extent: -137.1584, 25.8242, -46.2405, 59.1733
+        Temporal extent:
+        :param args: program arguments
+        :param working_dir: directory that will hold all files generated by the class
+        """
+
+        # Get variable details for requested products
+        vars = dict(filter(lambda k: k[0] in ['tp', 'temp'], ALL_VARS.items()))
+
+        # precipitation download must return a baseline time series because this is a requirement of the outsourced spi calculation algorithm
+        super().__init__(config, args, vars)
+
+        maxlat = 59.1733
+        minlat = 25.8242
+        maxlon = -46.2405
+        minlon = -137.1584
+
+        # check requested data is within space constraints
+        isbetween = lambda x, a, b: (x >= a) and (x <= b)
+        if not isbetween(args.latitude[0], minlat, maxlat):
+            self.logger.error('Latitude outside data extent: {0} to {1}N'.format(minlat, maxlat))
+            quit()
+        elif not isbetween(args.longitude[0], minlon, maxlon):
+            self.logger.error('Longitude outside data extent: {0} to {1}N'.format(minlon, maxlon))
+            quit()
+
+        # define a filename to output to
+        # To Do use vars for product name?
+        self.filename = os.path.join(config.indir, "safe_{}_forecast_{sd}-{ed}_{la}_{lo}.geojson".format('tp',
+                                                                                                         sd=config.baseline_start,
+                                                                                                         ed=config.baseline_end,
+                                                                                                         la=
+                                                                                                         args.latitude[
+                                                                                                             0],
+                                                                                                         lo=
+                                                                                                         args.longitude[
+                                                                                                             0]))
+
+    def download(self):
+        """
+        Download required data from SAFE server.
+        :output: list containing name of single generated csv file.
+        """
+
+        if os.path.exists(self.filename):
+            self.logger.info("Downloaded file '{}' already exists.".format(self.filename))
+        else:
+            request = fr.FeatureRequest(
+                fr.FEATURE_VARIABLES,
+                self.filename,
+                self.args,
+                self.config,
+                start_date=self.args.start_date,
+                end_date=self.args.end_date)
+
+            # initialise the download object
+            self.download_obj = fr.FeatureDownload(request, self.logger)
+
+            # Download and extract data
+            df = self.download_obj.download()
+
+            self.logger.info("Downloading  for '{}' completed.".format(self.filename))
+
+        return self.filename
+
+    def process(self):
+        """
+        Carries out processing of the downloaded data.
+        :return: path to the output file generated by the algorithm
+        """
+        self.logger.info("Initiating processing of SAFE Feature data.")
+
+        if not os.path.isfile(self.filename):
+            raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(self.filename))
+
+        # Downloading baseline precipitation
+        ## create era5 request object
+        request_baseline = erq.ERA5Request(
+            erq.PRECIP_VARIABLES,
+            'precip',
+            self.args,
+            self.config,
+            start_date=self.config.baseline_start,
+            end_date=self.config.baseline_end,
+            frequency=erq.Freq.MONTHLY,
+            aws=self.config.aws)
+
+        self.download_obj_baseline = erq.ERA5Download(request_baseline, self.logger)
+
+        ## call download
+        self.download_obj_baseline.download()
+        self.logger.info("Downloading for ECMWF: '{}'".format(self.download_obj_baseline.download_file_path))
+
+        # Calculate SPI
+        ds = self.convert_precip_to_spi()
+
+        # Trim to required dates so doesn't overlap with SAFE data
+        if int(self.args.start_date[0:6]) < 201912:
+            clip_date = '20191201'
+        else:
+            end_date = datetime.date(int(self.args.start_date[0:4]), int(self.args.start_date[4:6]),
+                                     int(self.args.start_date[6:8])) - datetime.timedelta(days=31)
+            clip_date = end_date.strftime('%Y%m%d')
+        self.logger.info("Clipping ECMWF data from {} to {}".format(self.config.baseline_start, clip_date))
+        ds = ds.sel(time=slice(pd.Timestamp(self.config.baseline_start), pd.Timestamp(clip_date)))
+
+        # Load SAFE data
+        safe = load.LoadSAFE(logger=logging, infile=self.filename)
+        df_filtered = safe.load_safe(ds.to_dataframe().reset_index(), lat_val=self.args.latitude[0],
+                                     lon_val=self.args.longitude[0])
+
+        # Generate output file
+        self.data_df = df_filtered
+        self.generate_output()
+
+        self.logger.info("Completed processing of SAFE FEATURE data.")
+
+        return df_filtered
+
+    def convert_precip_to_spi(self) -> None:
+        """
+        Calculates SPI precipitation drought index
+        :param input_file_path: path to file containing precipitation
+        :param output_file_path: path to file to be written containing SPI
+        :return: nothing
+        """
+
+        # Extract data from NetCDF file
+        ds = xr.open_dataset(self.download_obj_baseline.download_file_path)
+
+        if 'expver' in ds.keys():
+            ds = ds.sel(expver=1, drop=True)
+
+        # self.logger.debug("Xarray:")
+        # self.logger.debug(ds)
+
+        # Mask polygon if needed
+        if self.sstype.value == SSType.POLYGON.value:
+            ds = utils.mask_ds_poly(
+                ds=ds,
+                lats=self.args.latitude,
+                lons=self.args.longitude,
+                grid_x=0.1,
+                grid_y=0.1,
+                ds_lat_name='latitude',
+                ds_lon_name='longitude',
+                other=OUTSIDE_AREA_SELECTION,
+                mask_bbox=False
+            )
+
+        # Get total precipitation as data array
+        da = ds.tp
+
+        # Set up SPI calculation  algorithm
+        spi = indices.INDICES()
+
+        # Convert to monthly sums and extract max of the available cells
+        if self.config.aws or self.config.era_daily:  # or any other setting which would result in more than monthy data
+            da = da.resample(time='1MS').sum()
+
+        if self.sstype.value == SSType.POINT.value:
+            da = da.max(['latitude', 'longitude']).load()
+
+            # Calculate SPI from precip
+            spi_vals = spi.calc_spi(da)
+
+            # Add back latitude and longitude as store ds
+            num_vals = len(da)
+            lat = np.repeat(self.args.latitude, num_vals)
+            lon = np.repeat(self.args.longitude, num_vals)
+            ds = xr.Dataset(
+                data_vars={'tp': da, 'spi': ("time", spi_vals), 'latitude': ("time", lat), 'longitude': ("time", lon)})
+            # print("ds: ",ds)
+
+        else:
+            spi_vals = xr.apply_ufunc(spi.calc_spi, da, input_core_dims=[['time']], output_core_dims=[['time']],
+                                      vectorize=True)
+
+            # Store spi
+            ds = xr.Dataset(data_vars={'tp': da, 'spi': spi_vals})
+
+        self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(da.values), np.nanmin(da.values),
+                                                                                 np.nanmax(da.values)))
+        self.logger.info(
+            "SPI, {} values: {:.3f} {:.3f}".format(len(spi_vals), np.nanmin(spi_vals), np.nanmax(spi_vals)))
+
+        return ds
+
 
 class SPI_NCG(DroughtIndex):
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
@@ -976,13 +1349,15 @@ class SMA_ECMWF(DroughtIndex):
         """
 
         # Get variable details for requested products
-        vars = dict(filter(lambda k: k[0] in ['swvl1','swvl2','swvl3','swvl4','zscore_swvl1','zscore_swvl2','zscore_swvl3','zscore_swvl4'], ALL_VARS.items()))
+        vars = dict(filter(
+            lambda k: k[0] in ['swvl1', 'swvl2', 'swvl3', 'swvl4', 'zscore_swvl1', 'zscore_swvl2', 'zscore_swvl3',
+                               'zscore_swvl4'], ALL_VARS.items()))
 
-        super().__init__(config,args,vars)
+        super().__init__(config, args, vars)
         self.logger.debug("Initiated ERA5 daily processing of soil water.")
-        
-        #initialise download objects
-        #long-term 'baseline' object to compute the mean
+
+        # initialise download objects
+        # long-term 'baseline' object to compute the mean
         request_baseline = erq.ERA5Request(
             erq.SOILWATER_VARIABLES,
             'soilwater',
@@ -991,10 +1366,10 @@ class SMA_ECMWF(DroughtIndex):
             start_date=config.baseline_start,
             end_date=config.baseline_end,
             frequency=erq.Freq.MONTHLY)
-        
+
         self.download_obj_baseline = erq.ERA5Download(request_baseline, self.logger)
 
-        #create era5 request object for short term period
+        # create era5 request object for short term period
         request_sample = erq.ERA5Request(
             erq.SOILWATER_VARIABLES,
             'soilwater',
@@ -1003,21 +1378,22 @@ class SMA_ECMWF(DroughtIndex):
             args.start_date,
             args.end_date,
             frequency=erq.Freq.DAILY if self.config.era_daily else erq.Freq.HOURLY)
-        
+
         self.download_obj_sample = erq.ERA5Download(request_sample, self.logger)
-    
+
     def download(self):
         """
         Download requried data from ERA5 portal using the imported ERA5 request module.
         Download long term monthly data for the long term mean, and separately hourly data for short term period.
         """
+
         def exists_or_download(erad: erq.ERA5Download):
             if os.path.exists(erad.download_file_path):
                 self.logger.info("Downloaded file '{}' already exists.".format(erad.download_file_path))
             else:
                 downloaded_file = erad.download()
                 self.logger.info("Downloading  for '{}' completed.".format(downloaded_file))
-        
+
         # download baseline and monthly data
         exists_or_download(self.download_obj_baseline)
         exists_or_download(self.download_obj_sample)
@@ -1037,7 +1413,7 @@ class SMA_ECMWF(DroughtIndex):
 
         if not os.path.isfile(path_monthly):
             raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(path_monthly))
-        
+
         if not os.path.isfile(path_sample):
             raise FileNotFoundError("Unable to locate downloaded data '{}'.".format(path_sample))
 
@@ -1051,25 +1427,24 @@ class SMA_ECMWF(DroughtIndex):
         if 'expver' in monthly_swv.keys():
             monthly_swv = monthly_swv.isel(expver=0).drop_vars('expver')
 
-        if self.sstype.value==SSType.POINT:
-            monthly_swv = monthly_swv.mean(('latitude','longitude'))
-            sample_swv = sample_swv.drop_vars(['lat','lon'] if self.config.era_daily else ['latitude','longitude'])
+        if self.sstype.value == SSType.POINT:
+            monthly_swv = monthly_swv.mean(('latitude', 'longitude'))
+            sample_swv = sample_swv.drop_vars(['lat', 'lon'] if self.config.era_daily else ['latitude', 'longitude'])
 
         swv_mean = monthly_swv.mean('time')
         swv_std = monthly_swv.std('time')
 
         # Resmple sample data to dekads
         swv_dekads = utils.ds_to_dekads(sample_swv)
-        
+
         # Calculate zscores
         # Faster to just do this on all the data then remove the areas outside the polygon after
-        for layer in [1,2,3,4]:
+        for layer in [1, 2, 3, 4]:
             col = 'swvl' + str(layer)
             swv_dekads['zscore_' + col] = ((swv_dekads[col] - swv_mean[col]) / swv_std[col])
 
-        
         # Mask polygon if needed
-        if self.sstype.value==SSType.POLYGON.value:
+        if self.sstype.value == SSType.POLYGON.value:
             swv_dekads = utils.mask_ds_poly(
                 ds=swv_dekads,
                 lats=self.args.latitude,
@@ -1083,8 +1458,8 @@ class SMA_ECMWF(DroughtIndex):
             )
 
         # fill any data gaps
-        time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
-        swv_dekads = swv_dekads.reindex({'time':time_dekads})
+        time_dekads = utils.dti_dekads(self.args.start_date, self.args.end_date)
+        swv_dekads = swv_dekads.reindex({'time': time_dekads})
 
         self.logger.info("Completed processing of ERA5 soil water data.")
 
@@ -1099,8 +1474,9 @@ class SMA_GDO(GDODroughtIndex):
     """
     Specialisation of the GDODrought class for processing pre-computed soil moisture anomaly from GDO.
     """
+
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
-        super().__init__(config,args,['smant']) #['smant','smand']
+        super().__init__(config, args, ['smant'])  # ['smant','smand']
 
     def process(self):
         self.logger.info('Loading and trimming data...')
@@ -1117,42 +1493,55 @@ class SMA_GDO(GDODroughtIndex):
         # else:
         #     da = ds.smant
 
+        # TODO reimplement if it is important to have data beyond 2022
+        # # smand is used instead of smant for November 2022 (2nd dekad) onwards
+        # # split data, rename smand -> smant, and recombine
+        # if 'smand' in list(ds.variables):
+        #     da_smant = utils.crop_ds(ds.smant,self.args.start_date,'20221110')
+        #     da_smand = utils.crop_ds(ds.drop_vars('smant').rename({'smand':'smant'}).smant,'20221111',self.args.end_date)
+        #     da = xr.concat([da_smant,da_smand],dim='time')
+        #     self.vars.pop('smand')
+        # else:
+        #     da = ds.smant
+
         # Fill any data gaps
         self.logger.info('Filling gaps  in data...')
-        time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
+        time_dekads = utils.dti_dekads(self.args.start_date, self.args.end_date)
         ds = ds.reindex({'time': time_dekads})
 
         # Rename lat and lon coords for consitency with other drought indices
-        ds = ds.rename({'lat':'latitude','lon':'longitude'})
+        ds = ds.rename({'lat': 'latitude', 'lon': 'longitude'})
 
         self.data_ds = ds
-        
+
         # Convert to df for output
         self.logger.info('Converting to dataframe...')
         df = ds.to_dataframe().reset_index()
 
         # Drop locations outside of selected area
         self.logger.info('Reducing to requested area...')
-        df = df[df.smant!=OUTSIDE_AREA_SELECTION]
+        df = df[df.smant != OUTSIDE_AREA_SELECTION]
         self.data_df = df
         return df
+
 
 class FPAR_GDO(GDODroughtIndex):
     """
     Specialisation of the GDODrought class for processing pre-computed photosynthetically active radiation anomaly data from GDO.
     """
+
     def __init__(self, config: config.Config, args: config.AnalysisArgs):
-        super().__init__(config,args,'fpanv')
-    
+        super().__init__(config, args, 'fpanv')
+
     def process(self):
         ds = super().load_and_trim()
 
         # Fill any data gaps
-        time_dekads = utils.dti_dekads(self.args.start_date,self.args.end_date)
+        time_dekads = utils.dti_dekads(self.args.start_date, self.args.end_date)
         ds = ds.reindex({'time': time_dekads})
-        
+
         # Rename lat and lon coords for consitency with other drought indices
-        ds = ds.rename({'lat':'latitude','lon':'longitude'})
+        ds = ds.rename({'lat': 'latitude', 'lon': 'longitude'})
 
         self.data_ds = ds
 
@@ -1160,26 +1549,29 @@ class FPAR_GDO(GDODroughtIndex):
         df = ds.to_dataframe().reset_index()
 
         # Drop locations outside of selected area
-        df = df[df.fpanv!=OUTSIDE_AREA_SELECTION]
+        df = df[df.fpanv != OUTSIDE_AREA_SELECTION]
         self.data_df = df
 
         return df
 
-class CDI(DroughtIndex):
+        # SPI: one month before
 
+
+class CDI(DroughtIndex):
     """
     Extension of base class for combined drought indicator
     """
+
     def __init__(
             self,
             cfg: config.Config,
             args: config.CDIArgs
-            ):
-        
+    ):
+
         # Get variable details for requested products
-        vars = dict(filter(lambda k: k[0] in [args.spi_var,args.sma_var,args.fpr_var,'CDI'], ALL_VARS.items()))
-        
-        super().__init__(cfg,args,vars)
+        vars = dict(filter(lambda k: k[0] in [args.spi_var, args.sma_var, args.fpr_var, 'CDI'], ALL_VARS.items()))
+
+        super().__init__(cfg, args, vars)
 
         # Initialise all separate indicators to be combined
         sdate_ts = pd.Timestamp(args.start_date)
@@ -1191,37 +1583,36 @@ class CDI(DroughtIndex):
             """
             # Makes sure start date is in dekads and the required format
             sdate = required_sdate.replace(day=utils.nearest_dekad(required_sdate.day))
-            return config.AnalysisArgs(args.latitude,args.longitude,sdate.strftime('%Y%m%d'),args.end_date)
-        
-        # SPI: one month before
+            return config.AnalysisArgs(args.latitude, args.longitude, sdate.strftime('%Y%m%d'), args.end_date)
+
         # SPI dates are always at the start of each month because it's the monthly average
         sdate_spi = sdate_ts.replace(day=1) - relativedelta(months=1)
-        spi_class = SPI_ECMWF if args.sma_source=='ECMWF' else SPI_GDO
+        spi_class = SPI_ECMWF if args.sma_source == 'ECMWF' else SPI_GDO
         self.aa_spi = aa_new(sdate_spi)
-        self.spi = spi_class(cfg,self.aa_spi)
-            
+        self.spi = spi_class(cfg, self.aa_spi)
+
         # SMA: 2 dekads before
         sdate_sma = sdate_dk - relativedelta(days=20)
-        sma_class = SMA_ECMWF if args.sma_source=='ECMWF' else SMA_GDO
+        sma_class = SMA_ECMWF if args.sma_source == 'ECMWF' else SMA_GDO
         self.aa_sma = aa_new(sdate_sma)
-        self.sma = sma_class(cfg,self.aa_sma)
-         
+        self.sma = sma_class(cfg, self.aa_sma)
+
         # fAPAR - 1 dekad before
         sdate_fpr = sdate_dk - relativedelta(days=10)
         self.aa_fpr = aa_new(sdate_fpr)
-        self.fpr = FPAR_GDO(cfg,self.aa_fpr)
-        
+        self.fpr = FPAR_GDO(cfg, self.aa_fpr)
+
         # Initialise times
         # We want our final timeseries to include all data from the beginning of the SPI to the end of the CDI, so all data can be retained
-        self.time_dekads = utils.dti_dekads(sdate_spi,args.end_date)
+        self.time_dekads = utils.dti_dekads(sdate_spi, args.end_date)
 
     def download(self):
         spi_file = self.spi.download()
         sma_file = self.sma.download()
         fpr_file = self.fpr.download()
 
-        return[spi_file,sma_file,fpr_file]
-        
+        return [spi_file, sma_file, fpr_file]
+
     def process(self):
 
         self.logger.info("Computing Combined Drought Indicator...")
@@ -1242,24 +1633,23 @@ class CDI(DroughtIndex):
 
         # Interpolate SMA and FPR to same grid as CDI
         if not (self.sstype.value is SSType.POINT.value):
-            da_sma = utils.regrid_like(da_sma,da_spi)
-            da_fpr = utils.regrid_like(da_fpr,da_spi)
+            da_sma = utils.regrid_like(da_sma, da_spi)
+            da_fpr = utils.regrid_like(da_fpr, da_spi)
 
             da_sma = da_sma.reindex({'latitude': da_spi.latitude, 'longitude': da_spi.longitude},
                                     method='nearest')
             da_fpr = da_fpr.reindex({'latitude': da_spi.latitude, 'longitude': da_spi.longitude}, method='nearest')
 
-        else: # For point data
+        else:  # For point data
 
-            da_sma = da_sma.reindex({'latitude': self.spi.data_ds.latitude, 'longitude': self.spi.data_ds.longitude}, method='nearest')
-            da_fpr = da_fpr.reindex({'latitude': self.spi.data_ds.latitude, 'longitude': self.spi.data_ds.longitude}, method='nearest')
+            da_sma = da_sma.reindex({'latitude': self.spi.data_ds.latitude, 'longitude': self.spi.data_ds.longitude},
+                                    method='nearest')
+            da_fpr = da_fpr.reindex({'latitude': self.spi.data_ds.latitude, 'longitude': self.spi.data_ds.longitude},
+                                    method='nearest')
 
             # Remove duplicates
             da_sma = da_sma.drop_duplicates(dim=...)
             da_fpr = da_fpr.drop_duplicates(dim=...)
-
-        #self.logger.info("SPI: ",da_spi)
-        #self.logger.info("SMA: ",da_sma)
 
         # drop values outside requested area if polygon
         if self.sstype.value is SSType.POLYGON.value:
@@ -1268,18 +1658,18 @@ class CDI(DroughtIndex):
             da_fpr = da_fpr.where(da_fpr != OUTSIDE_AREA_SELECTION)
 
         # Reindex to shared timeframe
-        spi_reindexed = da_spi.reindex({'time':self.time_dekads},method='ffill')
-        sma_reindexed = da_sma.reindex({'time':self.time_dekads})
-        fpr_reindexed = da_fpr.reindex({'time':self.time_dekads})
+        spi_reindexed = da_spi.reindex({'time': self.time_dekads}, method='ffill')
+        sma_reindexed = da_sma.reindex({'time': self.time_dekads})
+        fpr_reindexed = da_fpr.reindex({'time': self.time_dekads})
 
-        self.ds_reindexed = xr.Dataset(data_vars = {self.args.spi_var: spi_reindexed,
-                                                    self.args.sma_var: sma_reindexed,
-                                                    self.args.fpr_var: fpr_reindexed})
-        
+        self.ds_reindexed = xr.Dataset(data_vars={self.args.spi_var: spi_reindexed,
+                                                  self.args.sma_var: sma_reindexed,
+                                                  self.args.fpr_var: fpr_reindexed})
+
         # Shift data to calculated CDI from delayed data
-        spi_shifted = spi_reindexed.shift({'time':3})
-        sma_shifted = sma_reindexed.shift({'time':2})
-        fpr_shifted = fpr_reindexed.shift({'time':1})
+        spi_shifted = spi_reindexed.shift({'time': 3})
+        sma_shifted = sma_reindexed.shift({'time': 2})
+        fpr_shifted = fpr_reindexed.shift({'time': 1})
 
         # Now create CDI with following levels:
         # 0: no warning
@@ -1288,7 +1678,7 @@ class CDI(DroughtIndex):
         # 3: alert 1 = fpr < -1 and spi < -1
         # 4: alert 2 = all < -1
 
-        def calc_cdi(spi,sma,fpr):
+        def calc_cdi(spi, sma, fpr):
             spi_ = spi < -1
             sma_ = sma < -1
             fpr_ = fpr < -1
@@ -1301,9 +1691,11 @@ class CDI(DroughtIndex):
             cdi[np.isnan(spi) | np.isnan(sma) | np.isnan(fpr)] = np.nan
             return cdi
 
-        cdi = xr.apply_ufunc(calc_cdi,spi_shifted,sma_shifted,fpr_shifted)
+        cdi = xr.apply_ufunc(calc_cdi, spi_shifted, sma_shifted, fpr_shifted)
 
-        self.ds_shifted = xr.Dataset(data_vars={self.args.spi_var: spi_shifted, self.args.sma_var: sma_shifted, self.args.fpr_var: fpr_shifted, 'CDI': cdi})
+        self.ds_shifted = xr.Dataset(
+            data_vars={self.args.spi_var: spi_shifted, self.args.sma_var: sma_shifted, self.args.fpr_var: fpr_shifted,
+                       'CDI': cdi})
         self.data_ds = self.ds_reindexed.assign(CDI=cdi)
         self.data_df = self.data_ds.to_dataframe().reset_index()
 
@@ -1311,4 +1703,327 @@ class CDI(DroughtIndex):
 
         self.logger.info("Completed processing of ERA5 CDI data.")
         return self.data_df
-    
+
+
+class UTCI(DroughtIndex):
+
+    def __init__(self, config: config.Config, args: config.AnalysisArgs):
+        """
+        Initializer
+        :param args: program arguments
+        :param working_dir: directory that will hold all files generated by the class
+        """
+        # Get variable details for requested products
+        vars = dict(filter(lambda k: k[0] in ['utci'], ALL_VARS.items()))
+
+        # precipitation download must return a baseline time series because this is a requirement of the outsourced spi calculation algorithm
+        super().__init__(config, args, vars)
+
+        # create era5 request object
+        request = erq.ERA5Request(
+            erq.PRECIP_VARIABLES,
+            'precip',
+            self.args,
+            self.config,
+            start_date=config.baseline_start,
+            end_date=config.baseline_end,
+            frequency=erq.Freq.DAILY if self.config.era_daily else erq.Freq.MONTHLY,
+            aws=self.config.aws)
+
+        # initialise the download object using the request, but don't download yet
+        self.download_obj = erq.ERA5Download(request, self.logger)
+
+        # setup download for UTCI
+        ## create UTCI request object for pre-calculated values
+        request = erq.ERA5Request(
+            ['UTCI'],
+            'utci',
+            self.args,
+            self.config,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            frequency=erq.Freq.DAILY,
+            aws=self.config.aws)
+
+        # initialise the download object using the request, but don't download yet
+        self.download_obj_utci = erq.ERA5Download(request, self.logger)
+
+        # if UTCI download fails, backup is to download ERA5 data and calculate
+
+        # create UTCI request object for daily download
+        request = erq.ERA5Request(
+            erq.UTCI_VARIABLES,
+            'multi',
+            self.args,
+            self.config,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            frequency=erq.Freq.HOURLY,
+            aws=self.config.aws)
+
+        # create UTCI request object for monthly download
+        ## Always download daily, monthly kept for testing
+        request_monthly = erq.ERA5Request(
+            erq.UTCI_VARIABLES,
+            'multi',
+            self.args,
+            self.config,
+            start_date=config.baseline_start,
+            end_date=config.baseline_end,
+            frequency=erq.Freq.MONTHLY,
+            aws=self.config.aws)
+
+        # initialise the backup download object using the request, but don't download yet
+        self.download_obj_utci_backup = erq.ERA5Download(request, self.logger)
+
+    def download(self):
+        """
+        Download required data from ERA5 portal using the imported ERA5 request module.
+        The processing part of the SPI calculation requires that the long term dataset is passed in at the same time as the short term analysis period therefore we must request the whole baseline period for this analysis.
+        :output: list containing name of single generated netcdf file. Must be a list as other indices will return the paths to multiple netcdfs for baseline and short-term timespans.
+        """
+
+        if os.path.exists(self.download_obj.download_file_path):
+            self.logger.info("Downloaded file '{}' already exists.".format(self.download_obj.download_file_path))
+        else:
+            downloaded_file = self.download_obj.download()
+            self.logger.info("Downloading  for '{}' completed.".format(downloaded_file))
+
+        return [self.download_obj.download_file_path]
+
+    def convert_precip_to_spi(self) -> None:
+        """
+        Calculates SPI precipitation drought index
+        :param input_file_path: path to file containing precipitation
+        :param output_file_path: path to file to be written containing SPI
+        :return: nothing
+        """
+
+        # Extract data from NetCDF file
+        ds = xr.open_dataset(self.download_obj.download_file_path)
+        # if 'expver' in ds.keys():
+        #    ds = ds.sel(expver=1,drop=True)
+
+        self.logger.debug("Precip xarray:")
+        self.logger.debug(ds)
+
+        # Mask polygon if needed
+        if self.sstype.value == SSType.POLYGON.value:
+            ds = utils.mask_ds_poly(
+                ds=ds,
+                lats=self.args.latitude,
+                lons=self.args.longitude,
+                grid_x=0.1,
+                grid_y=0.1,
+                ds_lat_name='latitude',
+                ds_lon_name='longitude',
+                other=OUTSIDE_AREA_SELECTION,
+                mask_bbox=False
+            )
+
+        # Get total precipitation as data array
+        da = ds.tp
+
+        # Set up SPI calculation  algorithm
+        spi = indices.INDICES()
+
+        # Convert to monthly sums and extract max of the available cells
+        if self.config.aws or self.config.era_daily:  # or any other setting which would result in more than monthly data
+            print(da)
+            da = da.resample(time='1MS').sum()
+
+        if self.sstype.value == SSType.POINT.value:
+            da = da.max(['latitude', 'longitude']).load()
+
+            # Calculate SPI from precip
+            spi_vals = spi.calc_spi(da)
+
+            # Add back latitude and longitude as store ds
+            num_vals = len(da)
+            lat = np.repeat(self.args.latitude, num_vals)
+            lon = np.repeat(self.args.longitude, num_vals)
+            ds = xr.Dataset(data_vars={'tp': da, 'spi': ("time", spi_vals)})
+            ds = ds.assign_coords({"longitude": lon}) \
+                .assign_coords({"latitude": lat})
+
+            # print("ECMWF ds: ",ds)
+
+        else:
+            spi_vals = xr.apply_ufunc(spi.calc_spi, da, input_core_dims=[['time']], output_core_dims=[['time']],
+                                      vectorize=True)
+
+            # Store spi
+            ds = xr.Dataset(data_vars={'tp': da, 'spi': spi_vals})
+
+        self.logger.info("Input precipitation, {} values: {:.3f} {:.3f} ".format(len(da.values), np.nanmin(da.values),
+                                                                                 np.nanmax(da.values)))
+        self.logger.info(
+            "SPI, {} values: {:.3f} {:.3f}".format(len(spi_vals), np.nanmin(spi_vals), np.nanmax(spi_vals)))
+
+        return ds
+
+    def process(self):
+        """
+        Carries out processing of the downloaded data.  This is the main functionality that is likely to differ between
+        each implementation.
+        :return: path to the output file generated by the algorithm
+        """
+        if self.config.era_daily:
+            self.logger.info("Initiating processing of ERA5 & UTCI daily data.")
+        else:
+            self.logger.info("Initiating processing of ERA5 & UTCI monthly data.")
+
+        if not os.path.isfile(self.download_obj.download_file_path):
+            raise FileNotFoundError(
+                "Unable to locate downloaded data '{}'.".format(self.spi_download.download_file_path))
+
+        # Calculates SPI precipitation drought index
+        ds = self.convert_precip_to_spi()
+
+        # Check for UTCI data, if not available then download
+        if not os.path.isfile(self.download_obj_utci.download_file_path):
+            file_path = self.download_obj_utci.download()
+        else:
+            file_path = self.download_obj_utci.download_file_path
+        if file_path:
+            print("UTCI file {} exists".format(self.download_obj_utci.download_file_path))
+            # Load data
+            ds_utci = xr.open_dataset(self.download_obj_utci.download_file_path)
+
+        else:
+            file_path = self.download_obj_utci_backup.download()
+            if file_path:
+                print("UTCI input file {} exists".format(self.download_obj_utci_backup.download_file_path))
+                # Load data
+                ds_utci = xr.open_dataset(self.download_obj_utci_backup.download_file_path)
+
+            else:
+                raise RuntimeError("Unable to downloaded data needed for UTCI.")
+
+        ## change lat & lon to coordinates
+        coords = [i for i in ds_utci.coords]
+        print(ds_utci)
+        if any("latitude" in var for var in coords):
+            ds_utci = ds_utci.set_coords(["latitude", "longitude"])
+        else:
+            ds_utci = ds_utci.rename(name_dict={'lat': 'latitude','lon': 'longitude'})
+
+        # Check if contains utci, else calculate
+        variables = [i for i in ds_utci.data_vars]
+        if not any("utci" in var for var in variables):
+            print("Calculating UTCI using: {}".format(variables))
+            ## calculate relative humidity
+            ds_utci['hurs'] = relative_humidity_from_dewpoint(ds_utci.t2m, ds_utci.d2m)
+            print("Humidity: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.hurs), np.nanmax(ds_utci.hurs), ds_utci.hurs.attrs["units"]))
+            ## calculate windspeed
+            ds_utci['sfcWind'], ds_utci['sfcWindDir'] = uas_vas_2_sfcwind(ds_utci.u10, ds_utci.v10)
+            print("Wind: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.sfcWind), np.nanmax(ds_utci.sfcWind), ds_utci.sfcWind.attrs["units"]))
+            ## calculate upwelling radiance
+            print("Downwelling Radiance, SW: {:.3f} {:.3f} LW: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.msdwswrf), np.nanmax(ds_utci.msdwswrf),np.nanmin(ds_utci.msdwlwrf), np.nanmax(ds_utci.msdwlwrf), ds_utci.msdwswrf.attrs["units"]))
+            ds_utci['rsus'] = ds_utci.msdwswrf - ds_utci.msnswrf
+            ds_utci['rlus'] = ds_utci.msdwlwrf - ds_utci.msnlwrf
+            ds_utci.rsus.attrs["units"] = 'W m**-2'
+            ds_utci.rlus.attrs["units"] = 'W m**-2'
+            print("Upwelling Radiance, SW: {:.3f} {:.3f} LW: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.rsus), np.nanmax(ds_utci.rsus),np.nanmin(ds_utci.rlus), np.nanmax(ds_utci.rlus), ds_utci.rsus.attrs["units"]))
+
+            ## add latitude & longitude units
+            ds_utci.latitude.attrs["units"] = 'degrees_north'
+            ds_utci.longitude.attrs["units"] = 'degrees_east'
+            print("Latitude: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.latitude), np.nanmax(ds_utci.latitude), ds_utci.latitude.attrs["units"]))
+
+            ## reorder time so increasing
+            ds_utci = ds_utci.sortby('time')
+
+            ## calculate mean radiant temperature
+            ds_utci['mrt'] = mean_radiant_temperature(ds_utci.msdwswrf, ds_utci.rsus, ds_utci.msdwlwrf, ds_utci.rlus, stat='sunlit')
+            print("MRT: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.mrt), np.nanmax(ds_utci.mrt), ds_utci.mrt.attrs["units"]))
+            ## calculate utci
+            ds_utci['utci'] = universal_thermal_climate_index(tas=ds_utci.t2m, hurs=ds_utci.hurs, sfcWind=ds_utci.sfcWind, mrt=ds_utci.mrt, mask_invalid=True)
+            print("UTCI: {:.3f} {:.3f} {}".format(np.nanmin(ds_utci.utci), np.nanmax(ds_utci.utci), ds_utci.utci.attrs["units"]))
+
+            # Resample to daily if downloaded as hourly data
+            if 'hourly' in self.download_obj_utci_backup.download_file_path:
+                ds_utci = ds_utci.resample(time="1D").max()#mean()
+
+        # Resample to monthly data if needed
+        if not self.config.era_daily:
+            ds_utci = ds_utci.resample(time="MS").mean()#max()
+
+        # Merge MRT & UTCI into SPI & convert MRT to degC
+        if any("mrt" in var for var in variables):
+            mrt = ds_utci.mrt - 272.15
+            mrt_vals = mrt.values
+
+        if np.nanmax(ds_utci.utci) > 100:
+            # Extract UTCI & converted to degC
+            utci = ds_utci.utci - 272.15
+        else:
+            # Extract UTCI
+            utci = ds_utci.utci
+        utci_vals = utci.values
+        times = ds_utci.time.values
+        if utci_vals.ndim == 1:
+            if any("mrt" in var for var in variables):
+                ds['mrt'] = xr.DataArray(mrt_vals, coords={'time': times}, dims=['time'])
+            ds['utci'] = xr.DataArray(utci_vals, coords={'time': times}, dims=['time'])
+        else:
+            if any("mrt" in var for var in variables):
+                ds['mrt'] = xr.DataArray(mrt_vals[:, 0, 0], coords={'time': times}, dims=['time'])
+            ds['utci'] = xr.DataArray(utci_vals[:, 0, 0], coords={'time': times}, dims=['time'])
+
+        # Drop field that aren't needed
+        if 'expver' in ds.keys():
+            ds = ds.drop_vars('expver')
+        if 'number' in ds.keys():
+            ds = ds.drop_vars('number')
+
+        # Select requested time slice
+        ds_filtered = utils.crop_ds(ds, self.args.start_date, self.args.end_date)
+        print("UTCI merged: ", ds_filtered)
+
+        # Calculate Health Index
+        utci_vals = np.array(ds_filtered.utci.values)
+        spi_vals = np.array(ds_filtered.spi.values)
+        health = utci_vals.copy()
+        health[utci_vals < 9] = -1
+        health[utci_vals < 0] = -2
+        health[utci_vals < -13] = -3
+        health[utci_vals < -27] = -4
+        health[utci_vals < -40] = -5
+        health[utci_vals >= 9] = 0
+        health[utci_vals > 26] = 1
+        health[utci_vals > 32] = 2
+        health[utci_vals > 38] = 3
+        health[utci_vals > 46] = 4
+
+        # Calc SPI impact, then add to array
+        spi = utci_vals.copy()
+        spi[spi_vals <= -1] = 1
+        spi[spi_vals < -1.5] = 2
+        spi[spi_vals < -2] = 3
+        spi[spi_vals > -1] = 0
+        spi[spi_vals > 1] = -1
+        spi[spi_vals > 1.5] = -2
+        spi[spi_vals > 2] = -3
+        # Add together then add to array
+        health += health + spi
+        times = ds_filtered.time.values
+        if utci_vals.ndim == 1:
+            ds_filtered['hindex'] = xr.DataArray(health, coords={'time': times}, dims=['time'])
+        else:
+            ds_filtered['hindex'] = xr.DataArray(health[:, 0, 0], coords={'time': times}, dims=['time'])
+        print("Health index: {:.3f} {:.3f}".format(np.nanmin(ds_filtered.hindex), np.nanmax(ds_filtered.hindex)))
+
+        # Fill any missing gaps
+        time_months = pd.date_range(self.args.start_date, self.args.end_date, freq='1MS')
+        ds_reindexed = ds_filtered.reindex({'time': time_months})
+
+        df_reindexed = ds_reindexed.to_dataframe().reset_index()
+
+        # store processed data on object
+        self.data_ds = ds_reindexed
+        self.data_df = df_reindexed
+
+        self.generate_output()
+
+        return df_reindexed
