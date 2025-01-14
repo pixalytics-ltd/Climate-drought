@@ -2,15 +2,15 @@
 Development of drought indicators linked to the OGC Climate Resilience & Disaster Pilots.
 
 The code includes both pre-computer and computed climate indices, which those marked as experimental where they were included for specific testing purposes
-    * **SPI_ECMWF:** Standardized Precipitation Index (SPI) calculated from the ECMWF ERA-5 data, Copernicus Climate Change Service (C3S) API access - see below
-    * **SPI_GDO:** SPI pre-computed from the Global Drought Observatory (GDO), files manually downloaded
-    * **SPI_NCG:** SPI calculated from NOAA data, Experimental API access
-    * **SMA_ECMWF:** Soil Moisture Anomaly (SMA) calculated from the ECMWF ERA-5 data, C3S API access - see below
-    * **SMA_GDO:** SMA pre-computed from GDO, files manually downloaded
-    * **fAPAR:** Fraction of Active Photosynthetically Active Radiation is obtained from the GDO, files manually downloaded
-    * **CDI:** Combined Drought Indicator calculated from a combination of SPI, SMA and fAPAR
-    * **FEATURE_SAFE:** Climate projection data from SAFE, Experimental using provided file
-    * **UTCI:** Universal Thermal Climate Index (UTCI) download & calculated from the ECMWF ERA-5 data and then combined with SPI to create a Health Index, C3S API access - see below
+* **SPI_ECMWF:** Standardized Precipitation Index (SPI) calculated from the ECMWF ERA-5 data, Copernicus Climate Change Service (C3S) API access - see below
+* **SPI_GDO:** SPI pre-computed from the Global Drought Observatory (GDO), files manually downloaded
+* **SPI_NCG:** SPI calculated from NOAA data, Experimental API access
+* **SMA_ECMWF:** Soil Moisture Anomaly (SMA) calculated from the ECMWF ERA-5 data, C3S API access - see below
+* **SMA_GDO:** SMA pre-computed from GDO, files manually downloaded
+* **fAPAR:** Fraction of Active Photosynthetically Active Radiation is obtained from the GDO, files manually downloaded
+* **CDI:** Combined Drought Indicator calculated from a combination of SPI, SMA and fAPAR
+* **FEATURE_SAFE:** Climate projection data from SAFE, Experimental using provided file
+* **UTCI:** Universal Thermal Climate Index (UTCI) download & calculated from the ECMWF ERA-5 data and then combined with SPI to create a Health Index, C3S API access - see below
 
 ## Installation of the climate_env conda environment
 
