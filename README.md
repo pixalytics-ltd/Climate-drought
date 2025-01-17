@@ -38,22 +38,28 @@ key: xxxx
 ```
 
 ### Running tests using direct interaction with the code
+The alternative is access through an API, which has been developed but not publically released at this stage.
+
+#### Run the example Python code
 * Setup and active the climate_env conda environment
-* Run the python code interface: `python test_drought.py -y 52.5 -x 1.25 -s 20200101 -e 20221231 -p SPI -o <output-folder>`
+* Run the Python code interface: `python test_drought.py -y 52.5 -x 1.25 -s 20200101 -e 20221231 -p SPI -o <output-folder>`
+
+#### Run the example notebook
+This approach has been tested on a local Linux environment and within the [WeKEO platform]https://www.wekeo.eu/ using their free-to-access Jupyter notebooks 
+* Setup and active the climate_env conda environment
 * Run the test_drought notebook, which also needs in the conda environment:
     * Install jupytext: `python -m pip install jupytext --upgrade --user`
     * Create the ipynb format file from the Github synched Markdown version: `jupytext --set-formats ipynb,md --sync test_drought.md`
     * Make the environment available to the jupyter notebook: `python -m ipykernel install --user --name climate_env --display-name "Python (climate_env)"`
     * Startup: `jupyter notebook`
 
-### Index_viewer web app
-Script to generate a web app to view and interact with Index input and output data.
-To run:
-* Ensure streamlit=1.8.1 is installed in your environmnt
-* Change `OUTPUT_DIR` to location of downloaded netcdf files from ECMWF and output JSON files
-* The `DOWNLOADED` constant is a dictionary containing the details of data which has already been downloaded. I recommend downloading the required data for a number of test case CDI's using the test_drought script, because the web app will hang if you try to download data while that's running. Bear in mind that the dates of the individual index data will not be the same as the arguments specified here, as the CDI requires longer time-periods of indices.
-* Activate the conda environment: `conda activate climate_env`
-* Run streamlit: `streamlit run index_viewer.py`
+#### Index_viewer web app
+* Script to generate a web app to view and interact with Index input and output data. To run:
+    * Ensure streamlit=1.8.1 is installed in your environmnt
+    * Change `OUTPUT_DIR` to location of downloaded netcdf files from ECMWF and output JSON files
+    * The `DOWNLOADED` constant is a dictionary containing the details of data which has already been downloaded. I recommend downloading the required data for a number of test case CDI's using the test_drought script, because the web app will hang if you try to download data while that's running. Bear in mind that the dates of the individual index data will not be the same as the arguments specified here, as the CDI requires longer time-periods of indices.
+    * Activate the conda environment: `conda activate climate_env`
+    * Run streamlit: `streamlit run index_viewer.py`
 The web app will start up in a window in your browser.
 
 
