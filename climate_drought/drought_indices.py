@@ -639,7 +639,7 @@ class SPI_ECMWF(DroughtIndex):
             self.config,
             start_date=config.baseline_start,
             end_date=config.baseline_end,
-            frequency=erq.Freq.MONTHLY,
+            frequency=erq.Freq.LMONTHLY if self.config.land else erq.Freq.MONTHLY,
             aws=self.config.aws)
 
         # initialise the download object using the request, but don't download yet
@@ -1720,6 +1720,12 @@ class UTCI(DroughtIndex):
         super().__init__(config, args, vars)
 
         # create era5 request object
+        if self.config.era_daily:
+            freq = erq.Freq.DAILY
+        elif self.config.land:
+            freq = erq.Freq.MONTHLY
+        else:
+            freq = erq.Freq.WMONTHLY
         request = erq.ERA5Request(
             erq.PRECIP_VARIABLES,
             'precip',
@@ -1727,7 +1733,7 @@ class UTCI(DroughtIndex):
             self.config,
             start_date=config.baseline_start,
             end_date=config.baseline_end,
-            frequency=erq.Freq.DAILY if self.config.era_daily else erq.Freq.MONTHLY,
+            frequency=freq,
             aws=self.config.aws)
 
         # initialise the download object using the request, but don't download yet
@@ -1827,13 +1833,15 @@ class UTCI(DroughtIndex):
         # Set up SPI calculation  algorithm
         spi = indices.INDICES()
 
-        # Convert to monthly sums and extract max of the available cells
+        # Convert to monthly sums
         if self.config.aws or self.config.era_daily:  # or any other setting which would result in more than monthly data
-            print(da)
             da = da.resample(time='1MS').sum()
 
         if self.sstype.value == SSType.POINT.value:
-            da = da.max(['latitude', 'longitude']).load()
+
+            if any('latitude' in var for var in da.dims):
+                #  Extract max of the available cells
+                da = da.max(['latitude', 'longitude']).load()
 
             # Calculate SPI from precip
             spi_vals = spi.calc_spi(da)

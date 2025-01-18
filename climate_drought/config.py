@@ -29,13 +29,14 @@ class CDIArgs(AnalysisArgs):
         self.singleval = singleval # Used for viewer
 
 class Config():
-    def __init__(self,outdir='output',indir='input',verbose=True,baseline_start='19850101',baseline_end=None,aws=False,era_daily=False):
+    def __init__(self,outdir='output',indir='input',verbose=True,baseline_start='19850101',baseline_end=None,aws=False,era_daily=False,era_land=True):
         self.outdir = outdir
         self.indir = indir
         self.verbose = verbose
         self.baseline_start = baseline_start
         self.aws = aws
         self.era_daily = era_daily
+        self.land = era_land
 
         if baseline_end is None:
             # Set to the last day of the last month

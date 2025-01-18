@@ -44,7 +44,9 @@ class DROUGHT:
         self.product = args.product
         if args.utci:
             self.product = "UTCI"
-        self.config = config.Config(args.outdir,args.indir,args.verbose,aws=args.aws,era_daily=args.era_daily)
+
+        # Setup config
+        self.config = config.Config(args.outdir,args.indir,args.verbose,aws=args.aws,era_daily=args.era_daily,era_land=False if args.water else True)
 
         if args.product == 'CDI':
             self.args = config.CDIArgs(args.latitude,args.longitude,args.start_date,args.end_date,oformat=args.oformat,spi_source=args.spi_source,sma_source=args.sma_source)
@@ -101,21 +103,27 @@ class DROUGHT:
         # Load in data and display then plot
         df = gpd.read_file(idx.output_file_path)
         print(df)
+
         fig, ax1 = plt.subplots()
-        ax1.plot(df._date,df.spi,color='b',label='spi')
-        #ax1.set_ylim([-1,1])
+        ax1.plot(df._date, df.spi, color='b', label='spi')
         ax1.set_ylabel('SPI [blue]')
         tick_list = df._date.values[::3]
         plt.xticks(rotation=45, ticks=tick_list)
+        minv = np.nanmin([np.nanmin(df.hindex), np.nanmin(df.spi)])
+        maxv = np.nanmax([np.nanmax(df.hindex), np.nanmax(df.spi)])
         if self.product == 'UTCI':
-            ax1.plot(df._date,df.hindex,color='g',label='utci')
+            ax1.plot(df._date, df.hindex, color='g', label='utci')
             ax1.set_ylabel('SPI [blue], Health index [green]')
             ax2 = ax1.twinx()
-            ax2.plot(df._date, df.utci, color = 'r', label = 'utci')
+            ax2.plot(df._date, df.utci, color='r', label='utci')
             ax2.set_ylabel('UTCI [degC, red]')
+            ax1.fill_between(df._date, 1.5, maxv,
+                             color='C1', alpha=0.3, interpolate=True)
+            ax1.fill_between(df._date, -1.5, minv,
+                             color='C0', alpha=0.3, interpolate=True)
         plt.tight_layout()
         plt.show()
-        
+
         return exit_code
 
 def main():
@@ -146,6 +154,7 @@ def main():
     )
     parser.add_argument("-A", "--accum", action="store_true", default=False, help="Accumulation - not set from command line")
     parser.add_argument("-AWS", "--aws", action="store_true", default=False, help="Download from AWS rather than CDS for SPI")
+    parser.add_argument("-w", "--water", action="store_true", default=False, help="Download ERA-5 rather than ERA-5 land")
     parser.add_argument("-y", "--latitude", type=str, dest="latitude")
     parser.add_argument("-x", "--longitude", type=str, dest="longitude")
     parser.add_argument("-p", "--product", type=str, dest="product", default='none')

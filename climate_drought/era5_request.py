@@ -42,7 +42,8 @@ AWS_PRECIP_VARIABLE = ['precipitation_amount_1hour_Accumulation']
 
 
 class Freq(Enum):
-    MONTHLY = 'monthly'
+    MONTHLY = 'monthly' # ERA-5 land
+    WMONTHLY = 'wmonthly' # ERA-5
     DAILY = 'daily'
     HOURLY = 'hourly'
 
@@ -188,6 +189,7 @@ class ERA5Download():
 
             self.logger.info(
                 "Downloading {} ERA data for {} {} for {}".format(frequency.value, dates[0], dates[-1], area))
+
             result = era_download.download_era5_reanalysis_data(dates=dates,
                                                                 times=times, variables=variables, area=str(area),
                                                                 frequency=frequency.value,
