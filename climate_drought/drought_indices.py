@@ -1888,6 +1888,10 @@ class UTCI(DroughtIndex):
         # Calculates SPI precipitation drought index
         ds = self.convert_precip_to_spi()
 
+        # Resample to monthly data if needed
+        if not self.config.era_daily:
+            ds = ds.resample(time="MS").mean()
+
         # Check for UTCI data, if not available then download
         if not os.path.isfile(self.download_obj_utci.download_file_path):
             file_path = self.download_obj_utci.download()
@@ -1961,7 +1965,6 @@ class UTCI(DroughtIndex):
         if any("mrt" in var for var in variables):
             mrt = ds_utci.mrt - 272.15
             mrt_vals = mrt.values
-
         if np.nanmax(ds_utci.utci) > 100:
             # Extract UTCI & converted to degC
             utci = ds_utci.utci - 272.15
@@ -1987,7 +1990,7 @@ class UTCI(DroughtIndex):
 
         # Select requested time slice
         ds_filtered = utils.crop_ds(ds, self.args.start_date, self.args.end_date)
-        print("UTCI merged: ", ds_filtered)
+        #print("UTCI merged: ", ds_filtered)
 
         # Calculate Health Index
         utci_vals = np.array(ds_filtered.utci.values)
@@ -2015,11 +2018,11 @@ class UTCI(DroughtIndex):
         spi[spi_vals > 2] = -3
         # Add together then add to array
         health += health + spi
-        times = ds_filtered.time.values
         if utci_vals.ndim == 1:
             ds_filtered['hindex'] = xr.DataArray(health, coords={'time': times}, dims=['time'])
         else:
             ds_filtered['hindex'] = xr.DataArray(health[:, 0, 0], coords={'time': times}, dims=['time'])
+        print("UTCI merged: {:.3f} {:.3f}".format(np.nanmin(ds_filtered.utci), np.nanmax(ds_filtered.utci)))
         print("Health index: {:.3f} {:.3f}".format(np.nanmin(ds_filtered.hindex), np.nanmax(ds_filtered.hindex)))
 
         # Fill any missing gaps
